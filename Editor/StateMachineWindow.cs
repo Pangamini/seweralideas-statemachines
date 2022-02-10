@@ -30,8 +30,8 @@ namespace SeweralIdeas.StateMachines.Editor
         private StateMachine m_selectedMachine;
         private int m_selectedMachineIndex;
         private bool m_showSettings;
-        [System.NonSerialized] private List<(FieldRecord, MachineGetter)> m_machines = new List<(FieldRecord, MachineGetter)>();
-        [System.NonSerialized] private List<GUIContent> m_machineOptions = new List<GUIContent>();
+        [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> m_machines = new List<(FieldRecord record, MachineGetter getter)>();
+        [System.NonSerialized] private GUIContent[] m_machineOptions = System.Array.Empty<GUIContent>();
 
         [MenuItem("Framework/StateMachine window")]
         static void Init()
@@ -45,13 +45,14 @@ namespace SeweralIdeas.StateMachines.Editor
         {
             using (new GUILayout.HorizontalScope("Toolbar"))
             {
-                GUIContent label;
-                if (m_selectedMachineIndex >= 0 && m_selectedMachineIndex < m_machines.Count)
-                    label = m_machineOptions[m_selectedMachineIndex];
-                else
-                    label = GUIContent.none;
+                //GUIContent label;
+                //if (m_selectedMachineIndex >= 0 && m_selectedMachineIndex < m_machines.Count)
+                //    label = m_machineOptions[m_selectedMachineIndex];
+                //else
+                //    label = GUIContent.none;
 
-                m_selectedMachineIndex = AdvPopup.LayoutPopup(label, m_selectedMachineIndex, m_machineOptions, true, false, "ToolbarPopup", GUILayout.Width(200));
+                m_selectedMachineIndex = EditorGUILayout.Popup(m_selectedMachineIndex, m_machineOptions, GUILayout.Width(200));
+                //m_selectedMachineIndex = AdvPopup.LayoutPopup(label, m_selectedMachineIndex, m_machineOptions, true, false, "ToolbarPopup", GUILayout.Width(200));
 
                 m_showSettings = GUILayout.Toggle(m_showSettings, "Settings", "toolbarbutton");
                 EditorGUI.BeginChangeCheck();
@@ -72,8 +73,8 @@ namespace SeweralIdeas.StateMachines.Editor
             if (m_selectedMachineIndex >= 0 && m_selectedMachineIndex < m_machines.Count)
             {
                 var item = m_machines[m_selectedMachineIndex];
-                m_selectedMachine = (StateMachine)item.Item2.Invoke(item.Item1.obj);
-                m_selectedField = item.Item1;
+                m_selectedMachine = (StateMachine)item.getter.Invoke(item.record.obj);
+                m_selectedField = item.record;
             }
             else
             {
@@ -102,7 +103,7 @@ namespace SeweralIdeas.StateMachines.Editor
             if (m_scannedGameObject == m_selectedGameObject) return;
 
             m_machines.Clear();
-            m_machineOptions.Clear();
+            m_machineOptions = System.Array.Empty<GUIContent>();
             
             if (m_selectedGameObject == null)
                 return;
@@ -150,7 +151,7 @@ namespace SeweralIdeas.StateMachines.Editor
                             var name = member.Name;
                             var record = new FieldRecord() { obj = obj, fieldName = name };
                             m_machines.Add(new System.ValueTuple<FieldRecord, MachineGetter>(record, machineGetter));
-                            m_machineOptions.Add(new GUIContent(record.ToString()));
+                            //m_machineOptions.Add(new GUIContent(record.ToString()));
                         }
 
                         else if (member.GetCustomAttribute<HasStateMachine>() != null)
@@ -161,6 +162,12 @@ namespace SeweralIdeas.StateMachines.Editor
 
                 }
                 type = type.BaseType;
+            }
+
+            m_machineOptions = new GUIContent[m_machines.Count];
+            for (int i = 0; i < m_machineOptions.Length; ++i)
+            {
+                m_machineOptions[i] = new GUIContent(m_machines[i].record.ToString());
             }
         }
 

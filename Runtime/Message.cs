@@ -1,15 +1,21 @@
-﻿namespace SeweralIdeas.StateMachines
+﻿using System;
+
+namespace SeweralIdeas.StateMachines
 {
-    public abstract class Message
+    internal abstract class Message
     {
         public abstract void Destroy();
         public abstract void Dispatch(State state);
         public abstract object GetHandler();
+
+        internal virtual void Reset()
+        {
+        }
     }
 
-    public class Message<TReceiver> : Message where TReceiver : class
+    internal class Message<TReceiver> : Message where TReceiver : class
     {
-        private static BasicStackPool<Message<TReceiver>> s_pool = new BasicStackPool<Message<TReceiver>>();
+        private static MessagePool<Message<TReceiver>> s_pool = new MessagePool<Message<TReceiver>>();
         public static Message<TReceiver> Create(Handler<TReceiver> handler)
         {
             var message = s_pool.Take();
@@ -36,9 +42,9 @@
         public override object GetHandler() => handler;
     }
 
-    public class Message<TReceiver, TArg> : Message where TReceiver : class
+    internal class Message<TReceiver, TArg> : Message where TReceiver : class
     {
-        private static BasicStackPool<Message<TReceiver, TArg>> s_pool = new BasicStackPool<Message<TReceiver, TArg>>();
+        private static MessagePool<Message<TReceiver, TArg>> s_pool = new MessagePool<Message<TReceiver, TArg>>();
         public static Message<TReceiver, TArg> Create(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var message = s_pool.Take();
