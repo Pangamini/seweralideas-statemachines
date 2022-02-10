@@ -33,7 +33,7 @@ namespace SeweralIdeas.StateMachines.Editor
         [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> m_machines = new List<(FieldRecord record, MachineGetter getter)>();
         [System.NonSerialized] private GUIContent[] m_machineOptions = System.Array.Empty<GUIContent>();
 
-        [MenuItem("Framework/StateMachine window")]
+        [MenuItem("Window/Analysis/StateMachine Debugger")]
         static void Init()
         {
             var window = CreateWindow<StateMachineWindow>("StateMachine");
