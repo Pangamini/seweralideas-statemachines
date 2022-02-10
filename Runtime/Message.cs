@@ -1,0 +1,69 @@
+﻿namespace SeweralIdeas.StateMachines
+{
+    public abstract class Message
+    {
+        public abstract void Destroy();
+        public abstract void Dispatch(State state);
+        public abstract object GetHandler();
+    }
+
+    public class Message<TReceiver> : Message where TReceiver : class
+    {
+        private static BasicStackPool<Message<TReceiver>> s_pool = new BasicStackPool<Message<TReceiver>>();
+        public static Message<TReceiver> Create(Handler<TReceiver> handler)
+        {
+            var message = s_pool.Take();
+            message.handler = handler;
+            return message;
+        }
+
+        public override void Destroy()
+        {
+            s_pool.Return(this);
+        }
+
+        public override void Dispatch(State state)
+        {
+            state.ReceiveMessage(handler);
+        }
+
+        public override string ToString()
+        {
+            return string.Format("Message {0}()", typeof(TReceiver).Name);
+        }
+
+        public Handler<TReceiver> handler { get; private set; }
+        public override object GetHandler() => handler;
+    }
+
+    public class Message<TReceiver, TArg> : Message where TReceiver : class
+    {
+        private static BasicStackPool<Message<TReceiver, TArg>> s_pool = new BasicStackPool<Message<TReceiver, TArg>>();
+        public static Message<TReceiver, TArg> Create(Handler<TReceiver, TArg> handler, TArg arg)
+        {
+            var message = s_pool.Take();
+            message.handler = handler;
+            message.arg0 = arg;
+            return message;
+        }
+
+        public override void Destroy()
+        {
+            s_pool.Return(this);
+        }
+
+        public override void Dispatch(State state)
+        {
+            state.ReceiveMessage(handler, arg0);
+        }
+
+        public override string ToString()
+        {
+            return string.Format("Message {0}({1})", typeof(TReceiver).Name, arg0);
+        }
+
+        public Handler<TReceiver, TArg> handler { get; private set; }
+        public TArg arg0 { get; private set; }
+        public override object GetHandler() => handler;
+    }
+}
