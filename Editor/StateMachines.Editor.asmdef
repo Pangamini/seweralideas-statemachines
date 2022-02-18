@@ -1,5 +1,5 @@
 {
-    "name": "StateMachines.Editor",
+    "name": "SeweralIdeas.StateMachines.Editor",
     "rootNamespace": "SeweralIdeas.StateMachines.Editor",
     "references": [
         "GUID:33b674e3fb0156142a1ec84819cac8f1"
