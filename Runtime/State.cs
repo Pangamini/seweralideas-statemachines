@@ -178,7 +178,10 @@ namespace SeweralIdeas.StateMachines
                 stateMachine.WriteLine($"{stateMachine.Name} exiting {name}");
             }
 
-            m_hasTopState.topState = m_hasTopState.propagateUntil;
+            if (m_hasTopState.propagateUntil == this)
+                m_hasTopState.topState = m_hasTopState.propagateUntil;
+            else
+                m_hasTopState.topState = parentState;
         }
 
         protected virtual void OnEnter() { }
