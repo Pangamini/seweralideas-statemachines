@@ -49,28 +49,43 @@ namespace SeweralIdeas.StateMachines
         public abstract void DrawGUI(StateMachine.GUISettings settings, bool isActive);
         protected virtual void OnGUI() { }
 
-        public static StateGUIScope StateGUI(string label, Color color)
+        public static StateGUIScope StateGUI(State state, StateMachine.GUISettings settings, bool isActive)
         {
             var scope = new StateGUIScope
             {
-                color = color,
-                label = label
+                settings = settings,
+                isActive = isActive,
+                state = state
             };
             scope.Initialize();
             return scope;
         }
 
-        public struct StateGUIScope : System.IDisposable
+        public struct StateGUIScope : IDisposable
         {
-            public string label;
-            public Color color;
+            public State state;
+            public StateMachine.GUISettings settings;
+            public bool isActive;
 
             public void Initialize()
             {
                 var origColor = GUI.color;
-                GUI.color = color;
-                GUILayout.BeginVertical(label, "Window");
+                GUI.color = settings.GetColor(isActive);
+                GUILayout.BeginVertical(state.name, "Window");
                 GUI.color = origColor;
+
+                state.OnGUI();
+
+                if (settings.fieldsMode != StateMachine.GUISettings.FieldsMode.None)
+                {
+                    var info = StateDebugInfo.Get(state.GetType());
+                    for (int i = 0; i < info.Count; ++i)
+                    {
+                        var field = info[i];
+                        if(field.show || settings.fieldsMode == StateMachine.GUISettings.FieldsMode.AllFields)
+                            GUILayout.Label($"{field.fieldInfo.Name}: \t{field.fieldInfo.GetValue(state)}");
+                    }
+                }
             }
 
             public void Dispose()
@@ -269,9 +284,8 @@ namespace SeweralIdeas.StateMachines
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
-            using (StateGUI(name, settings.GetColor(isActive)))
-            {
-                OnGUI();
+            using (StateGUI(this, settings, isActive))
+            {             
             }
         }
 #endif
@@ -365,9 +379,8 @@ namespace SeweralIdeas.StateMachines
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
-            using (StateGUI(name, settings.GetColor(isActive)))
+            using (StateGUI(this, settings, isActive))
             {
-                OnGUI();
                 using (new GUILayout.HorizontalScope())
                 {
                     foreach (var child in m_childStates)
@@ -412,9 +425,8 @@ namespace SeweralIdeas.StateMachines
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
-            using (StateGUI(name, settings.GetColor(isActive)))
+            using (StateGUI(this, settings, isActive))
             {
-                OnGUI();
                 using (new GUILayout.HorizontalScope())
                 {
                     foreach (var child in m_childStates)

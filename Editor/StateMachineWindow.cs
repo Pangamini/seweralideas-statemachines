@@ -65,6 +65,7 @@ namespace SeweralIdeas.StateMachines.Editor
             if (m_showSettings)
             {
                 GUILayout.BeginVertical("Settings", "box");
+                m_guiSettings.fieldsMode = (StateMachine.GUISettings.FieldsMode)EditorGUILayout.EnumPopup("show fields", m_guiSettings.fieldsMode);
                 m_guiSettings.stateColor_normal = EditorGUILayout.ColorField("normal color", m_guiSettings.stateColor_normal);
                 m_guiSettings.stateColor_active = EditorGUILayout.ColorField("active color", m_guiSettings.stateColor_active);
                 GUILayout.EndVertical();
