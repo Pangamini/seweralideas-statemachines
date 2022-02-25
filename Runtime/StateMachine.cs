@@ -405,6 +405,14 @@ namespace SeweralIdeas.StateMachines
         [Serializable]
         public class GUISettings
         {
+            public enum FieldsMode
+            {
+                None,
+                Fields,
+                AllFields
+            }
+
+            public FieldsMode fieldsMode;
             public Color stateColor_normal;
             public Color stateColor_active;
 
@@ -450,4 +458,5 @@ namespace SeweralIdeas.StateMachines
         }
 
     }
+
 }
