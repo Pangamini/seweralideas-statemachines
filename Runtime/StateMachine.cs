@@ -22,16 +22,15 @@ namespace SeweralIdeas.StateMachines
 
         internal interface ITransition
         {
-            void TransitTo(IState state);
+            void TransitTo(IStateNoArg state);
             void TransitTo<TArg>(IState<TArg> state, TArg arg);
         }
 
         public object actor { get; private set; }
         private volatile int m_messageReceivingThread;
-        private object m_lock = new object();
-        private IState m_rootState;
-        private State m_topState;
-        State IHasTopState.topState { get { return m_topState; } set { m_topState = value; } }
+        private readonly object m_lock = new object();
+        private readonly IStateNoArg m_rootState;
+        public State topState { get; set; }
         State IHasTopState.propagateUntil { get { return m_rootState.state; } }
         private Action<string> m_debugLog;
 
@@ -63,10 +62,11 @@ namespace SeweralIdeas.StateMachines
             None = 0,
             EnterExit = 1 <<0,
         }
+
         public LogFlags logFlags = 0;
         public readonly string Name;
 
-        public StateMachine(string name, IState rootState, bool synchronousReceiving = true, Action<string> debugLog = null)
+        public StateMachine(string name, IStateNoArg rootState, bool synchronousReceiving = true, Action<string> debugLog = null)
         {
             if (debugLog == null)
                 m_debugLog = Console.WriteLine;
@@ -78,12 +78,12 @@ namespace SeweralIdeas.StateMachines
             messagesReadyEvent = null;
         }
 
-        public StateMachine(string name, IState rootState, AutoResetEvent messagesReadyEvent, Action<string> debugLog = null) : this(name, rootState, false, debugLog)
+        public StateMachine(string name, IStateNoArg rootState, AutoResetEvent messagesReadyEvent, Action<string> debugLog = null) : this(name, rootState, false, debugLog)
         {
             this.messagesReadyEvent = messagesReadyEvent;
         }
         
-        public StateMachine(string name, IState rootState, Action onMessagesAvailable, Action<string> debugLog = null) : this(name, rootState, false, debugLog)
+        public StateMachine(string name, IStateNoArg rootState, Action onMessagesAvailable, Action<string> debugLog = null) : this(name, rootState, false, debugLog)
         {
             this.m_onMessagesAvailable = onMessagesAvailable;
         }
@@ -138,11 +138,17 @@ namespace SeweralIdeas.StateMachines
                 while (!StartMessageReceiving(out bool sameThread))
                 {
                     if (sameThread)
+                    {
                         break;  // don't wait, we are called from within the message handling
+                    }
+
                     Thread.Sleep(0);
                 }
+
                 if (!IsInitialized)
+                {
                     return;
+                }
 
                 initializationState = InitializationState.ShuttingDown;
                 WriteLine($"{Name} shutting down");
@@ -155,15 +161,16 @@ namespace SeweralIdeas.StateMachines
                 m_messagePriorityQueue = null;
                 m_transitionQueue = null;
                 initializationState = InitializationState.Offline;
-                messagesReadyEvent?.Set();    // let the handling thread close/crash instead of dangling;
+                messagesReadyEvent?.Set();  // let the handling thread close/crash instead of dangling
             }
         }
 
 
-        private static Handler<ITransition, IState> msg_transition = (ITransition handler, IState _dest) => { handler.TransitTo(_dest); };
+        private static Handler<ITransition, IStateNoArg> msg_transition = (ITransition handler, IStateNoArg _dest) => { handler.TransitTo(_dest); };
+
         private static class TransitionHandler<TArg>
         {
-            public readonly static Handler<ITransition, (IState<TArg>, TArg)> msg_transition =
+            public readonly static Handler<ITransition, (IState<TArg>, TArg)> msg_transitionArg =
                 (ITransition handler, (IState<TArg> destination, TArg _arg) args) => { handler.TransitTo(args.destination, args._arg); };
         }
 
@@ -177,7 +184,7 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
-        internal void TransitTo(IState destination)
+        internal void TransitTo(IStateNoArg destination)
         {
             InitGuard();
             var handler = msg_transition;
@@ -188,7 +195,7 @@ namespace SeweralIdeas.StateMachines
                     try
                     {
                         m_messageConsumed = false;
-                        m_topState.ReceiveMessage(handler, destination);
+                        topState.ReceiveMessage(handler, destination);
                     }
                     finally
                     {
@@ -198,14 +205,14 @@ namespace SeweralIdeas.StateMachines
                 }
                 else
                 {
-                    m_transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
+                    m_transitionQueue.Enqueue(Message<ITransition, IStateNoArg>.Create(handler, destination));
                     HandleMessagesInternal();
                 }
             }
             else
             {
                 StartMessageReceiving(out _);
-                m_transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
+                m_transitionQueue.Enqueue(Message<ITransition, IStateNoArg>.Create(handler, destination));
                 StopMessageReceiving();
                 OnMessageEnqueued();
             }
@@ -214,7 +221,7 @@ namespace SeweralIdeas.StateMachines
         internal void TransitTo<TArg>(IState<TArg> destination, TArg arg)
         {
             InitGuard();
-            var handler = TransitionHandler<TArg>.msg_transition;
+            var handler = TransitionHandler<TArg>.msg_transitionArg;
             if (synchronousReceiving)
             {
                 if (StartMessageReceiving(out bool sameThread))
@@ -222,7 +229,7 @@ namespace SeweralIdeas.StateMachines
                     try
                     {
                         m_messageConsumed = false;
-                        m_topState.ReceiveMessage(handler, (destination, arg));
+                        topState.ReceiveMessage(handler, (destination, arg));
                     }
                     finally
                     {
@@ -255,7 +262,7 @@ namespace SeweralIdeas.StateMachines
                     try
                     {
                         m_messageConsumed = false;
-                        m_topState.ReceiveMessage(handler);
+                        topState.ReceiveMessage(handler);
                     }
                     finally
                     {
@@ -289,7 +296,7 @@ namespace SeweralIdeas.StateMachines
                     try
                     {
                         m_messageConsumed = false;
-                        m_topState.ReceiveMessage(handler, arg);
+                        topState.ReceiveMessage(handler, arg);
                     }
                     finally
                     {
@@ -353,7 +360,7 @@ namespace SeweralIdeas.StateMachines
                             try
                             {
                                 m_messageConsumed = false;
-                                transition.Dispatch(m_topState);
+                                transition.Dispatch(topState);
                             }
                             finally
                             {
@@ -367,7 +374,7 @@ namespace SeweralIdeas.StateMachines
                             try
                             {
                                 m_messageConsumed = false;
-                                priorityMessage.Dispatch(m_topState);
+                                priorityMessage.Dispatch(topState);
                             }
                             finally
                             {
@@ -381,7 +388,7 @@ namespace SeweralIdeas.StateMachines
                             try
                             {
                                 m_messageConsumed = false;
-                                message.Dispatch(m_topState);
+                                message.Dispatch(topState);
                             }
                             finally
                             {
