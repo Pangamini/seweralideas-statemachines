@@ -14,18 +14,10 @@ namespace SeweralIdeas.StateMachines
     /// Every state must implement this interface
     /// </summary>
     public interface IStateBase { State state { get; } };
-
-
     /// <summary>
     /// State that implements this interface can be transited to without arguments
     /// </summary>
-    public interface IStateNoArg : IStateBase { }
-
-    /// <summary>
-    /// State that implements this interface can be transited to without arguments
-    /// </summary>
-    public interface IState : IStateNoArg { void Enter(); };
-
+    public interface IState : IStateBase { void Enter(); };
     /// <summary>
     /// State that implements this interface can be transited to with a specified generic argument
     /// </summary>
@@ -34,13 +26,10 @@ namespace SeweralIdeas.StateMachines
 
     internal static class StateExtensions
     {
-        public static void StateEnter(this IStateNoArg state)
+        public static void StateEnter(this IState state)
         {
             state.state.EnterBegin();
-            if (state is IState stateWithEnter)
-            {
-                stateWithEnter.Enter();
-            }
+            state.Enter();
             state.state.EnterEnd();
         }
 
@@ -110,7 +99,7 @@ namespace SeweralIdeas.StateMachines
 
         public string name { get { return GetType().Name; } }
 
-        protected void TransitTo(IStateNoArg destination)
+        protected void TransitTo(IState destination)
         {
             stateMachine.TransitTo(destination);
         }
@@ -133,16 +122,10 @@ namespace SeweralIdeas.StateMachines
                     sm.m_messageConsumed = true;
                     handler(receiver);
                     if (sm.m_messageConsumed)
-                    {
                         return;
-                    }
                 }
 
-                if (state == propagateUntil)
-                {
-                    break;
-                }
-
+                if (state == propagateUntil) break;
                 state = state.parentState;
             }
         }
@@ -160,16 +143,10 @@ namespace SeweralIdeas.StateMachines
                     sm.m_messageConsumed = true;
                     handler(receiver, arg);
                     if (sm.m_messageConsumed)
-                    {
                         return;
-                    }
                 }
 
-                if (state == propagateUntil)
-                {
-                    break;
-                }
-
+                if (state == propagateUntil) break;
                 state = state.parentState;
             }
         }
@@ -195,6 +172,7 @@ namespace SeweralIdeas.StateMachines
         {
             m_hasTopState.topState = this;
 
+            //Debug.Assert(stateMachine.receivingMessage);
             if (stateMachine.logFlags.HasFlag(StateMachine.LogFlags.EnterExit))
             {
                 stateMachine.WriteLine($"{stateMachine.Name} entering {name}");
@@ -209,19 +187,16 @@ namespace SeweralIdeas.StateMachines
 
         internal virtual void Exit()
         {
+            //Debug.Assert(stateMachine.receivingMessage);
             if (stateMachine.logFlags.HasFlag(StateMachine.LogFlags.EnterExit))
             {
                 stateMachine.WriteLine($"{stateMachine.Name} exiting {name}");
             }
 
             if (m_hasTopState.propagateUntil == this)
-            {
                 m_hasTopState.topState = m_hasTopState.propagateUntil;
-            }
             else
-            {
                 m_hasTopState.topState = parentState;
-            }
         }
 
         protected virtual void OnEnter() { }
@@ -258,10 +233,7 @@ namespace SeweralIdeas.StateMachines
             set
             {
                 if (stateMachine != null)
-                {
-                    throw new InvalidOperationException("Cannot set parent of a state that's been initialized");
-                }
-
+                    throw new System.InvalidOperationException("Cannot set parent of a state that's been initialized");
                 m_parent?.RemoveChild(this);
                 m_parent = value;
                 m_parent?.AddChild(this);
@@ -325,7 +297,7 @@ namespace SeweralIdeas.StateMachines
     public class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
     {
         private State m_activeSubState;
-        public IStateNoArg entrySubState { get; set; }
+        public IState entrySubState { get; set; }
 
         private readonly List<State> m_childStates = new List<State>();
 
@@ -342,7 +314,7 @@ namespace SeweralIdeas.StateMachines
             m_childStates.Remove(child);
         }
 
-        void StateMachine.ITransition.TransitTo(IStateNoArg state)
+        void StateMachine.ITransition.TransitTo(IState state)
         {
             if (/*state != m_activeSubState && */m_childStates.Contains(state.state))
             {
@@ -351,7 +323,6 @@ namespace SeweralIdeas.StateMachines
                 state.StateEnter();
                 return;
             }
-
             PropagateMessage();
         }
 
@@ -364,7 +335,6 @@ namespace SeweralIdeas.StateMachines
                 state.StateEnter(arg);
                 return;
             }
-
             PropagateMessage();
         }
 
@@ -414,9 +384,7 @@ namespace SeweralIdeas.StateMachines
                 using (new GUILayout.HorizontalScope())
                 {
                     foreach (var child in m_childStates)
-                    {
                         child.DrawGUI(settings, isActive && child == m_activeSubState);
-                    }
                 }
             }
         }
@@ -435,22 +403,22 @@ namespace SeweralIdeas.StateMachines
         }
 
         private OrthogonalBranch[] m_branches;
-        private List<IStateNoArg> m_childStates = new List<IStateNoArg>();
+        private List<IState> m_childStates = new List<IState>();
 
         public int ChildCount => m_childStates.Count;
-        public IStateNoArg GetChild(int index) => m_childStates[index];
+        public IState GetChild(int index) => m_childStates[index];
 
         void IParentState.AddChild(State child)
         {
-            if (!(child is IStateNoArg istate))
-                throw new ArgumentException($"OrthogonalState's children must implement {nameof(IStateNoArg)}");
+            if (!(child is IState istate))
+                throw new System.ArgumentException("OrthogonalState's children must implement IState");
             m_childStates.Add(istate);
         }
 
         void IParentState.RemoveChild(State child)
         {
-            if (!(child is IStateNoArg istate))
-                throw new ArgumentException($"OrthogonalState's children must implement {nameof(IStateNoArg)}");
+            if (!(child is IState istate))
+                throw new System.ArgumentException("OrthogonalState's children must implement IState");
             m_childStates.Remove(istate);
         }
 
