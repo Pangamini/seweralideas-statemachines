@@ -71,7 +71,7 @@ namespace SeweralIdeas.StateMachines
             {
                 var origColor = GUI.color;
                 GUI.color = settings.GetColor(isActive);
-                GUILayout.BeginVertical(state.name, "Window");
+                GUILayout.BeginVertical(state.name, "Window", GUILayout.ExpandHeight(true));
                 GUI.color = origColor;
 
                 state.OnGUI();
