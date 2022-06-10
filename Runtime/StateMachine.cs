@@ -13,10 +13,10 @@ namespace SeweralIdeas.StateMachines
     internal interface IHasTopState
     {
         State topState { get; set; }
-        State propagateUntil { get; }
+        IState rootState { get; }
     }
     
-    public partial class StateMachine : IHasTopState
+    public class StateMachine : IHasTopState
     {
         public enum InitializationState : byte { Offline, Initializing, Initialized, ShuttingDown }
 
@@ -31,8 +31,14 @@ namespace SeweralIdeas.StateMachines
         private object m_lock = new object();
         private IState m_rootState;
         private State m_topState;
-        State IHasTopState.topState { get { return m_topState; } set { m_topState = value; } }
-        State IHasTopState.propagateUntil { get { return m_rootState.state; } }
+        State IHasTopState.topState
+        { 
+            get => m_topState;
+            set => m_topState = value;
+        }
+        
+        IState IHasTopState.rootState => m_rootState;
+        
         private Action<string> m_debugLog;
 
         public void WriteLine(string text)
@@ -109,8 +115,24 @@ namespace SeweralIdeas.StateMachines
                 m_messageQueue = new ConcurrentQueue<Message>();
                 m_messagePriorityQueue = new ConcurrentQueue<Message>();
                 m_transitionQueue = new ConcurrentQueue<Message>();
-                m_rootState.state.Initialize(this, this);
+
+                try
+                {
+                    m_rootState.state.Initialize(this, this);
+                }
+                catch
+                {
+                    m_rootState.state.Shutdown();
+                    m_messageQueue = null;
+                    m_messagePriorityQueue = null;
+                    m_transitionQueue = null;
+                    this.actor = null;
+                    initializationState = InitializationState.Offline;
+                    throw;
+                }
+
                 initializationState = InitializationState.Initialized;
+                
                 try
                 {
                     if (!StartMessageReceiving(out _))
@@ -132,7 +154,6 @@ namespace SeweralIdeas.StateMachines
 
         public void Shutdown()
         {
-
             lock (m_lock)
             {
                 while (!StartMessageReceiving(out bool sameThread))
@@ -429,6 +450,12 @@ namespace SeweralIdeas.StateMachines
         {
             //GUILayout.Label("Root State: " + m_rootState);
             //GUILayout.Label("Top State: " + m_topState);
+            if (!IsInitialized)
+            {
+                GUILayout.Label("StateMachine not initialized");
+                return;
+            }
+            
             m_rootState.state.DrawGUI(settings, IsInitialized);
             if (m_messageQueue != null)
             {
@@ -455,6 +482,13 @@ namespace SeweralIdeas.StateMachines
         private void StopMessageReceiving()
         {
             m_messageReceivingThread = 0;
+        }
+
+        public class InitializationException : Exception
+        {
+            public InitializationException() { }
+            public InitializationException(string message) : base(message) { }
+            public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
 
     }

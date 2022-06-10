@@ -1,11 +1,8 @@
 ﻿#if UNITY_5_3_OR_NEWER
 #define UNITY
+using System;
 using UnityEngine;
 #endif
-
-using System.Collections.Generic;
-using System;
-using Debug = System.Diagnostics.Debug;
 
 
 namespace SeweralIdeas.StateMachines
@@ -18,22 +15,30 @@ namespace SeweralIdeas.StateMachines
     /// State that implements this interface can be transited to without arguments
     /// </summary>
     public interface IState : IStateBase { void Enter(); };
+
     /// <summary>
     /// State that implements this interface can be transited to with a specified generic argument
     /// </summary>
     /// <typeparam name="TArg">Type of the transition argument</typeparam>
-    public interface IState<TArg> : IStateBase { void Enter(TArg arg); };
-
-    internal static class StateExtensions
+    public interface IState<in TArg> : IStateBase
     {
-        public static void StateEnter(this IState state)
+        void Enter(TArg arg);
+    };
+
+    public interface IParentState : IStateBase
+    {
+    }
+
+    public static class StateExtensions
+    {
+        internal static void StateEnter(this IState state)
         {
             state.state.EnterBegin();
             state.Enter();
             state.state.EnterEnd();
         }
 
-        public static void StateEnter<Targ>(this IState<Targ> state, Targ arg)
+        internal static void StateEnter<TArg>(this IState<TArg> state, TArg arg)
         {
             state.state.EnterBegin();
             state.Enter(arg);
@@ -43,13 +48,29 @@ namespace SeweralIdeas.StateMachines
 
     public abstract class State : IStateBase
     {
-        State IStateBase.state { get { return this; } }
+        State IStateBase.state => this;
+
+        internal State()
+        {
+            
+        }
+
+        protected static bool Contains(IStateBase[] states, IStateBase state)
+        {
+            for (int i = 0; i < states.Length; ++i)
+            {
+                if (ReferenceEquals(states[i], state))
+                    return true;
+            }
+
+            return false;
+        }
 
 #if UNITY
         public abstract void DrawGUI(StateMachine.GUISettings settings, bool isActive);
         protected virtual void OnGUI() { }
 
-        public static StateGUIScope StateGUI(State state, StateMachine.GUISettings settings, bool isActive)
+        protected static StateGUIScope StateGUI(State state, StateMachine.GUISettings settings, bool isActive)
         {
             var scope = new StateGUIScope
             {
@@ -61,7 +82,7 @@ namespace SeweralIdeas.StateMachines
             return scope;
         }
 
-        public struct StateGUIScope : IDisposable
+        protected struct StateGUIScope : IDisposable
         {
             public State state;
             public StateMachine.GUISettings settings;
@@ -95,9 +116,9 @@ namespace SeweralIdeas.StateMachines
         }
 #endif
 
-        protected abstract State parentState { get; }
+        internal abstract IParentState parentState { get; set; }
 
-        public string name { get { return GetType().Name; } }
+        public string name => GetType().Name;
 
         protected void TransitTo(IState destination)
         {
@@ -111,13 +132,13 @@ namespace SeweralIdeas.StateMachines
 
         internal virtual void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
-            var state = this;
-            var propagateUntil = m_hasTopState.propagateUntil;
+            var iterState = this;
+            var propagateUntil = m_hasTopState.rootState;
             var sm = stateMachine;
 
             while (true)
             {
-                if (state is TReceiver receiver)
+                if (iterState is TReceiver receiver)
                 {
                     sm.m_messageConsumed = true;
                     handler(receiver);
@@ -125,20 +146,20 @@ namespace SeweralIdeas.StateMachines
                         return;
                 }
 
-                if (state == propagateUntil) break;
-                state = state.parentState;
+                if (iterState == propagateUntil) break;
+                iterState = iterState.parentState.state;
             }
         }
 
         internal virtual void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
-            var state = this;
-            var propagateUntil = m_hasTopState.propagateUntil;
+            var iterState = this;
+            var propagateUntil = m_hasTopState.rootState;
             var sm = stateMachine;
 
             while (true)
             {
-                if (state is TReceiver receiver)
+                if (iterState is TReceiver receiver)
                 {
                     sm.m_messageConsumed = true;
                     handler(receiver, arg);
@@ -146,16 +167,16 @@ namespace SeweralIdeas.StateMachines
                         return;
                 }
 
-                if (state == propagateUntil) break;
-                state = state.parentState;
+                if (iterState == propagateUntil) break;
+                iterState = iterState.parentState.state;
             }
         }
 
-        internal virtual void Initialize(StateMachine machine, IHasTopState _hasTopState)
+        internal virtual void Initialize(StateMachine machine, IHasTopState hasTopState)
         {
-            m_hasTopState = _hasTopState;
+            m_hasTopState = hasTopState;
             stateMachine = machine;
-            OnInitialize();
+            //OnInitialize();
         }
 
         internal virtual void Shutdown()
@@ -165,7 +186,6 @@ namespace SeweralIdeas.StateMachines
             stateMachine = null;
         }
 
-        protected virtual void OnInitialize() { }
         protected virtual void OnShutdown() { }
 
         internal virtual void EnterBegin()
@@ -193,10 +213,10 @@ namespace SeweralIdeas.StateMachines
                 stateMachine.WriteLine($"{stateMachine.Name} exiting {name}");
             }
 
-            if (m_hasTopState.propagateUntil == this)
-                m_hasTopState.topState = m_hasTopState.propagateUntil;
+            if (m_hasTopState.rootState == this)
+                m_hasTopState.topState = m_hasTopState.rootState.state;
             else
-                m_hasTopState.topState = parentState;
+                m_hasTopState.topState = parentState.state;
         }
 
         protected virtual void OnEnter() { }
@@ -219,36 +239,27 @@ namespace SeweralIdeas.StateMachines
     public abstract class State<TActor, TParent> : State where TParent : IParentState where TActor : class
     {
         public TActor actor { get; private set; }
-        internal override void Initialize(StateMachine machine, IHasTopState _hasTopState)
+
+        internal State()
+        {
+        }
+        
+        internal override void Initialize(StateMachine machine, IHasTopState hasTopState)
         {
             actor = machine.actor as TActor;
-            base.Initialize(machine, _hasTopState);
+            base.Initialize(machine, hasTopState);
         }
 
 
         private TParent m_parent;
-        public TParent parent
+        public TParent parent => m_parent;
+
+        internal override IParentState parentState
         {
-            get { return m_parent; }
-            set
-            {
-                if (stateMachine != null)
-                    throw new System.InvalidOperationException("Cannot set parent of a state that's been initialized");
-                m_parent?.RemoveChild(this);
-                m_parent = value;
-                m_parent?.AddChild(this);
-            }
+            get => m_parent;
+            set => m_parent = (TParent)value;
         }
-
-        override protected State parentState { get { return parent?.state; } }
     }
-
-    public interface IParentState : IStateBase
-    {
-        void AddChild(State child);
-        void RemoveChild(State child);
-    }
-
 
     public class SimpleState<TActor> : SimpleState<TActor, IParentState> where TActor : class { }
 
@@ -271,12 +282,15 @@ namespace SeweralIdeas.StateMachines
             base.Exit();
         }
 
-        internal override sealed void Initialize(StateMachine machine, IHasTopState _hasTopState)
+        internal sealed override void Initialize(StateMachine machine, IHasTopState hasTopState)
         {
-            base.Initialize(machine, _hasTopState);
+            base.Initialize(machine, hasTopState);
+            OnInitialize();
         }
+        
+        protected virtual void OnInitialize() { }
 
-        internal override sealed void Shutdown()
+        internal sealed override void Shutdown()
         {
             base.Shutdown();
         }
@@ -292,31 +306,23 @@ namespace SeweralIdeas.StateMachines
 
     }
 
-    public class HierarchicalState<TActor> : HierarchicalState<TActor, IParentState> where TActor : class { }
+    public abstract class HierarchicalState<TActor> : HierarchicalState<TActor, IParentState> where TActor : class
+    {
+    }
 
-    public class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
+    public abstract class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
     {
         private State m_activeSubState;
-        public IState entrySubState { get; set; }
+        private IState m_entrySubState;
 
-        private readonly List<State> m_childStates = new List<State>();
+        private State[] m_childStates;
 
-        public int ChildCount => m_childStates.Count;
+        public int ChildCount => m_childStates.Length;
         public State GetChild(int index) => m_childStates[index];
-
-        void IParentState.AddChild(State child)
-        {
-            m_childStates.Add(child);
-        }
-
-        void IParentState.RemoveChild(State child)
-        {
-            m_childStates.Remove(child);
-        }
 
         void StateMachine.ITransition.TransitTo(IState state)
         {
-            if (/*state != m_activeSubState && */m_childStates.Contains(state.state))
+            if (Contains(m_childStates, state.state))
             {
                 m_activeSubState?.Exit();
                 m_activeSubState = state.state;
@@ -328,7 +334,7 @@ namespace SeweralIdeas.StateMachines
 
         void StateMachine.ITransition.TransitTo<TArg>(IState<TArg> state, TArg arg)
         {
-            if (/*state != m_activeSubState && */m_childStates.Contains(state.state))
+            if (Contains(m_childStates, state.state))
             {
                 m_activeSubState?.Exit();
                 m_activeSubState = state.state;
@@ -342,13 +348,13 @@ namespace SeweralIdeas.StateMachines
         internal sealed override void EnterBegin()
         {
             base.EnterBegin();
-            m_activeSubState = entrySubState?.state;
+            m_activeSubState = m_entrySubState?.state;
         }
 
         internal sealed override void EnterEnd()
         {
             base.EnterEnd();
-            entrySubState?.StateEnter();
+            m_entrySubState?.StateEnter();
         }
 
         internal sealed override void Exit()
@@ -358,21 +364,66 @@ namespace SeweralIdeas.StateMachines
             base.Exit();
         }
 
-        internal override sealed void Initialize(StateMachine machine, IHasTopState _hasTopState)
+        internal sealed override void Initialize(StateMachine machine, IHasTopState hasTopState)
         {
-            base.Initialize(machine, _hasTopState);
+            base.Initialize(machine, hasTopState);
+
+            OnInitialize(out m_entrySubState, out IStateBase[] childStates);
+
+            if (childStates == null)
+            {
+                throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
+            }
+            
+            if (m_entrySubState == null || Array.IndexOf(childStates, null) != -1)
+            {
+                throw new StateMachine.InitializationException($"SubState of {GetType()} cannot be null");
+            }
+            
+            bool entryStateIncluded = Contains(childStates, m_entrySubState);
+
+            int offset;
+            if (entryStateIncluded)
+            {
+                m_childStates = new State[childStates.Length];
+                offset = 0;
+            }
+            else
+            {
+                m_childStates = new State[childStates.Length + 1];
+                m_childStates[0] = m_entrySubState.state;
+                offset = 1;
+            }
+
+            for (int i = 0; i < childStates.Length; ++i)
+            {
+                var child = childStates[i].state;
+                
+                if (child.parentState != null)
+                {
+                    throw new StateMachine.InitializationException($"Cannot add state {child.GetType()} as a child of {GetType()}. already has a parent");
+                }
+
+                child.parentState = this;
+                m_childStates[i + offset] = child;
+            }
+            
             foreach (var child in m_childStates)
             {
-                child.Initialize(machine, _hasTopState);
+                child.Initialize(machine, hasTopState);
             }
         }
 
-        internal override sealed void Shutdown()
+        protected abstract void OnInitialize(out IState entrySubState, out IStateBase[] subStates);
+
+        internal sealed override void Shutdown()
         {
             foreach (var child in m_childStates)
             {
                 child.Shutdown();
             }
+
+            m_childStates = null;
             base.Shutdown();
         }
 
@@ -392,35 +443,21 @@ namespace SeweralIdeas.StateMachines
     }
 
 
-    public class OrthogonalState<TActor> : OrthogonalState<TActor, IParentState> where TActor : class { }
+    public abstract class OrthogonalState<TActor> : OrthogonalState<TActor, IParentState> where TActor : class
+    {
+    }
 
-    public class OrthogonalState<TActor, TParent> : State<TActor, TParent>, IParentState where TParent : IParentState where TActor : class
+    public abstract class OrthogonalState<TActor, TParent> : State<TActor, TParent>, IParentState where TParent : IParentState where TActor : class
     {
         private class OrthogonalBranch : IHasTopState
         {
             public State topState { get; set; }
-            public State propagateUntil { get; set; }
+            public IState rootState { get; set; }
         }
 
         private OrthogonalBranch[] m_branches;
-        private List<IState> m_childStates = new List<IState>();
 
-        public int ChildCount => m_childStates.Count;
-        public IState GetChild(int index) => m_childStates[index];
-
-        void IParentState.AddChild(State child)
-        {
-            if (!(child is IState istate))
-                throw new System.ArgumentException("OrthogonalState's children must implement IState");
-            m_childStates.Add(istate);
-        }
-
-        void IParentState.RemoveChild(State child)
-        {
-            if (!(child is IState istate))
-                throw new System.ArgumentException("OrthogonalState's children must implement IState");
-            m_childStates.Remove(istate);
-        }
+        public int ChildCount => m_branches.Length;
 
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
@@ -429,8 +466,8 @@ namespace SeweralIdeas.StateMachines
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    foreach (var child in m_childStates)
-                        child.state.DrawGUI(settings, isActive);
+                    foreach (var child in m_branches)
+                        child.rootState.state.DrawGUI(settings, isActive);
                 }
             }
         }
@@ -444,42 +481,71 @@ namespace SeweralIdeas.StateMachines
         internal sealed override void EnterEnd()
         {
             base.EnterEnd();
-            foreach (var substate in m_childStates)
-                substate.StateEnter();
+            foreach (var subState in m_branches)
+                subState.rootState.StateEnter();
         }
 
         internal sealed override void Exit()
         {
-            foreach (var substate in m_childStates)
-                substate.state.Exit();
+            foreach (var subState in m_branches)
+                subState.rootState.state.Exit();
             OnExit();
             base.Exit();
         }
 
-        internal override void Initialize(StateMachine machine, IHasTopState _hasTopState)
+        internal override void Initialize(StateMachine machine, IHasTopState hasTopState)
         {
-            base.Initialize(machine, _hasTopState);
+            base.Initialize(machine, hasTopState);
 
-            m_branches = new OrthogonalBranch[m_childStates.Count];
-
-            for (int i = 0; i < m_childStates.Count; ++i)
+            OnInitialize(out var childStates);
+            
+            if (childStates == null)
             {
+                throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
+            }
+            
+            if (Array.IndexOf(childStates, null) != -1)
+            {
+                throw new StateMachine.InitializationException("SubState of OrthogonalState cannot be null");
+            }
+
+            m_branches = new OrthogonalBranch[childStates.Length];
+
+            for (int i = 0; i < childStates.Length; ++i)
+            {
+                var child = childStates[i];
+                var childState = child.state;
+                
+                if (childState.parentState != null)
+                {
+                    throw new StateMachine.InitializationException("State already has a parent");
+                }
+                
+                childState.parentState = this;
                 var branch = new OrthogonalBranch();
-                var child = m_childStates[i];
-                branch.propagateUntil = child.state;
+                branch.rootState = child;
                 m_branches[i] = branch;
-                child.state.Initialize(machine, branch);
+            }
+
+            foreach(var branch in m_branches)
+            {
+                branch.rootState.state.Initialize(machine, branch);
             }
         }
 
+        protected abstract void OnInitialize(out IState[] childStates);
 
-        internal override sealed void Shutdown()
+        internal sealed override void Shutdown()
         {
-            for (int i = 0; i < m_branches.Length; ++i)
+            if (m_branches != null)
             {
-                m_branches[i].topState.Shutdown();
+                for (int i = 0; i < m_branches.Length; ++i)
+                {
+                    m_branches[i]?.topState?.Shutdown();
+                }
             }
 
+            m_branches = null;
             base.Shutdown();
         }
 
@@ -511,5 +577,6 @@ namespace SeweralIdeas.StateMachines
                 base.ReceiveMessage(handler, arg);
         }
     }
+
 
 }
