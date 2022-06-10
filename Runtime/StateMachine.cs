@@ -122,7 +122,7 @@ namespace SeweralIdeas.StateMachines
                 }
                 catch
                 {
-                    m_rootState.state.Shutdown();
+                    m_rootState?.state?.Shutdown();
                     m_messageQueue = null;
                     m_messagePriorityQueue = null;
                     m_transitionQueue = null;
@@ -457,11 +457,11 @@ namespace SeweralIdeas.StateMachines
             }
             
             m_rootState.state.DrawGUI(settings, IsInitialized);
-            if (m_messageQueue != null)
-            {
-                foreach (var message in m_messageQueue)
-                    GUILayout.Label(message.ToString());
-            }
+            // if (m_messageQueue != null)
+            // {
+            //     foreach (var message in m_messageQueue)
+            //         GUILayout.Label(message.ToString());
+            // }
         }
 #endif
 

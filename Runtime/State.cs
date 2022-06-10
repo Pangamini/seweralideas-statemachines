@@ -184,6 +184,7 @@ namespace SeweralIdeas.StateMachines
             OnShutdown();
             m_hasTopState = null;
             stateMachine = null;
+            parentState = null;
         }
 
         protected virtual void OnShutdown() { }
@@ -370,29 +371,24 @@ namespace SeweralIdeas.StateMachines
 
             OnInitialize(out m_entrySubState, out IStateBase[] childStates);
 
-            if (childStates == null)
+            if (childStates == null || Array.IndexOf(childStates, null) != -1)
             {
                 throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
             }
             
-            if (m_entrySubState == null || Array.IndexOf(childStates, null) != -1)
-            {
-                throw new StateMachine.InitializationException($"SubState of {GetType()} cannot be null");
-            }
-            
-            bool entryStateIncluded = Contains(childStates, m_entrySubState);
+            bool addEntrySubstate = m_entrySubState != null && !Contains(childStates, m_entrySubState);
 
             int offset;
-            if (entryStateIncluded)
-            {
-                m_childStates = new State[childStates.Length];
-                offset = 0;
-            }
-            else
+            if (addEntrySubstate)
             {
                 m_childStates = new State[childStates.Length + 1];
                 m_childStates[0] = m_entrySubState.state;
                 offset = 1;
+            }
+            else
+            {
+                m_childStates = new State[childStates.Length];
+                offset = 0;
             }
 
             for (int i = 0; i < childStates.Length; ++i)
@@ -420,7 +416,7 @@ namespace SeweralIdeas.StateMachines
         {
             foreach (var child in m_childStates)
             {
-                child.Shutdown();
+                child?.Shutdown();
             }
 
             m_childStates = null;
@@ -499,16 +495,11 @@ namespace SeweralIdeas.StateMachines
 
             OnInitialize(out var childStates);
             
-            if (childStates == null)
+            if (childStates == null || Array.IndexOf(childStates, null) != -1)
             {
                 throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
             }
             
-            if (Array.IndexOf(childStates, null) != -1)
-            {
-                throw new StateMachine.InitializationException("SubState of OrthogonalState cannot be null");
-            }
-
             m_branches = new OrthogonalBranch[childStates.Length];
 
             for (int i = 0; i < childStates.Length; ++i)
