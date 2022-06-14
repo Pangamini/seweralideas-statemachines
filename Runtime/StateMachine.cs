@@ -3,8 +3,9 @@
 using UnityEngine;
 #endif
 
-using System.Collections.Concurrent;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace SeweralIdeas.StateMachines
@@ -118,7 +119,14 @@ namespace SeweralIdeas.StateMachines
 
                 try
                 {
-                    m_rootState.state.Initialize(this, this);
+                    var context = new InitContext()
+                    {
+                        stateMachine = this,
+                        iStates = new List<IState>(),
+                        iBaseStates = new List<IStateBase>()
+                    };
+                    
+                    m_rootState.state.Initialize(context, this);
                 }
                 catch
                 {
@@ -491,6 +499,12 @@ namespace SeweralIdeas.StateMachines
             public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
 
+        internal struct InitContext
+        {
+            public StateMachine stateMachine;
+            public List<IState> iStates;
+            public List<IStateBase> iBaseStates;
+        }
     }
 
 }

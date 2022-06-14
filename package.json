@@ -1,6 +1,6 @@
 {
   "name": "com.seweralideas.statemachines",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "displayName": "StateMachines",
   "description": "Hierarchical finite state machines for general use",
   "author":
