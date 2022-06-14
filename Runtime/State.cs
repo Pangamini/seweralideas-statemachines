@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-
-#if UNITY_5_3_OR_NEWER
+﻿#if UNITY_5_3_OR_NEWER
 #define UNITY
 using UnityEngine;
 #endif
+
+using System;
+using System.Collections.Generic;
 
 
 namespace SeweralIdeas.StateMachines
