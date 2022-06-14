@@ -1,4 +1,7 @@
 # Changelog
+## [0.2.0]
+### Changed
+- Hierarchical and Orthogonal states must now list their subStates during initialization.
 ## [0.1.2]
 ### Added
 - State field values can now be displayed in StateMachineWindow
