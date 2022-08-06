@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SeweralIdeas.StateMachines;
 using UnityEngine;
 using UnityEngine.Profiling;
@@ -45,7 +46,7 @@ public class DoorAndLeverExample : MonoBehaviour
     
     void Awake()
     {
-        m_stateMachine = new StateMachine("DoorAndLever", new State_Root(), true, Debug.Log);
+        m_stateMachine = new StateMachine("DoorAndLever", new State_Root(), Debug.Log);
         m_stateMachine.logFlags = StateMachine.LogFlags.EnterExit;
         m_triggerButton.onClick.AddListener( () => m_stateMachine.SendMessage(msg_onClickButton));
         m_leverSwitch.onClick.AddListener(OnClickLever);
@@ -87,9 +88,10 @@ public class DoorAndLeverExample : MonoBehaviour
 
     private class State_Root : OrthogonalState<DoorAndLeverExample>, IState
     {
-        protected override void OnInitialize(out IState[] subStates)
+        protected override void OnInitialize(List<IState> subStates)
         {
-            subStates =  new IState[] { new State_LeverRoot(), new State_DoorRoot() };;
+            subStates.Add(new State_LeverRoot());
+            subStates.Add(new State_DoorRoot());
         }
 
         void IState.Enter()
@@ -108,10 +110,11 @@ public class DoorAndLeverExample : MonoBehaviour
                 actor.m_leverIconOff.SetActive(false);
             }
 
-            protected override void OnInitialize(out IState entrySubState, out IStateBase[] subStates)
+            protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
             {
                 entrySubState = m_state_switchedOn;
-                subStates = new IStateBase[]{m_state_switchedOn, m_state_switchedOff};
+                subStates.Add(m_state_switchedOn);
+                subStates.Add(m_state_switchedOff);
             }
 
             private class State_SwitchedOn : SimpleState<DoorAndLeverExample, State_LeverRoot>, IState, IOnClickLever, IOnClickButton
@@ -148,10 +151,13 @@ public class DoorAndLeverExample : MonoBehaviour
                 m_state_closing = new State_Closing(m_state_closed);
             }
             
-            protected override void OnInitialize(out IState entrySubState, out IStateBase[] subStates)
+            protected override void OnInitialize(out IState entrySubState, List<IStateBase> stateBases)
             {
                 entrySubState = m_state_closed;
-                subStates = new IStateBase[] { m_state_open, m_state_closed, m_state_opening, m_state_closing };
+                stateBases.Add(m_state_open);
+                stateBases.Add(m_state_closed);
+                stateBases.Add(m_state_opening);
+                stateBases.Add(m_state_closing);
             }
 
             private class State_Open : SimpleState<DoorAndLeverExample, State_DoorRoot>, IState, ISetDoorDestination
@@ -191,6 +197,7 @@ public class DoorAndLeverExample : MonoBehaviour
                 private IState m_transitTo;
                 private float m_targetPositiom;
 
+                [ShowField]
                 protected float m_speed;
                 protected State_DoorMoving(float targetPositiom, IState transitTo)
                 {
