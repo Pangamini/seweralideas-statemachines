@@ -8,7 +8,6 @@ using System.Collections.Generic;
 
 namespace SeweralIdeas.StateMachines
 {
-    
     internal interface IHasTopState
     {
         State topState { get; set; }
@@ -143,8 +142,10 @@ namespace SeweralIdeas.StateMachines
 
             m_rootState.state.Shutdown();
             
+#if UNITY
             Debug.Assert(m_messageQueue.Count == 0);
             Debug.Assert(m_transitionQueue.Count == 0);
+#endif
             m_messageQueue.Clear();
             m_transitionQueue.Clear();
             InitializationState = InitState.Offline;
@@ -214,6 +215,12 @@ namespace SeweralIdeas.StateMachines
                     Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination, arg)));
                 HandleMessagesInternal();
             }
+        }
+
+        internal void SendMessage(Message message)
+        {
+            m_messageQueue.Enqueue(message);
+            HandleMessagesInternal();
         }
 
         public void SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
@@ -389,4 +396,20 @@ namespace SeweralIdeas.StateMachines
         }
     }
 
+    static class Extensions
+    {
+        public static bool TryDequeue<T>(this Queue<T> queue, out T element)
+        {
+            if (queue.Count > 0)
+            {
+                element = queue.Dequeue();
+                return true;
+            }
+
+            element = default;
+            return false;
+        }
+        
+    }
+    
 }
