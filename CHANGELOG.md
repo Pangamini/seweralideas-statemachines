@@ -1,5 +1,8 @@
 # Changelog
-# [0.2.1]
+## [0.2.2]
+### Added
+- ConcurrentStateMachine wrapper for StateMachine
+## [0.2.1]
 ### Removed
 - StateMachine multithreaded modes
   - StateMachines are no longer thread-safe!
