@@ -169,6 +169,7 @@ namespace SeweralIdeas.StateMachines
         internal void TransitTo(IState destination)
         {
             InitGuard();
+            Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
             var handler = msg_transition;
 
             if (StartMessageReceiving())
@@ -194,6 +195,8 @@ namespace SeweralIdeas.StateMachines
         internal void TransitTo<TArg>(IState<TArg> destination, TArg arg)
         {
             InitGuard();
+            Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
+            Debug.Assert(destination?.state?.stateMachine == this);
             var handler = TransitionHandler<TArg>.msg_transition;
 
             if (StartMessageReceiving())
