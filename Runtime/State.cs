@@ -1,11 +1,20 @@
 ﻿#if UNITY_5_3_OR_NEWER
 #define UNITY
+#if DEBUG
+#define UNITY_PROFILING
+#endif
+#endif
+
+#if UNITY
 using UnityEngine;
+#endif
+
+#if UNITY_PROFILING
+using UnityEngine.Profiling;
 #endif
 
 using System;
 using System.Collections.Generic;
-
 
 namespace SeweralIdeas.StateMachines
 {
@@ -54,7 +63,6 @@ namespace SeweralIdeas.StateMachines
 
         internal State()
         {
-            
         }
 
         protected static bool Contains(IStateBase[] states, IStateBase state)
@@ -143,7 +151,13 @@ namespace SeweralIdeas.StateMachines
                 if (iterState is TReceiver receiver)
                 {
                     sm.m_messageConsumed = true;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(GetType().FullName);
+#endif
                     handler(receiver);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
                     if (sm.m_messageConsumed)
                         return;
                 }
@@ -164,7 +178,13 @@ namespace SeweralIdeas.StateMachines
                 if (iterState is TReceiver receiver)
                 {
                     sm.m_messageConsumed = true;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(GetType().FullName);
+#endif
                     handler(receiver, arg);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
                     if (sm.m_messageConsumed)
                         return;
                 }
