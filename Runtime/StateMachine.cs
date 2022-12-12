@@ -1,6 +1,16 @@
 ﻿#if UNITY_5_3_OR_NEWER
 #define UNITY
+#if DEBUG
+#define UNITY_PROFILING
+#endif
+#endif
+
+#if UNITY
 using UnityEngine;
+#endif
+
+#if UNITY_PROFILING
+using UnityEngine.Profiling;
 #endif
 
 using System;
@@ -259,7 +269,13 @@ namespace SeweralIdeas.StateMachines
                 try
                 {
                     m_messageConsumed = false;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(typeof(TReceiver).Name);
+#endif
                     m_topState.ReceiveMessage(handler, arg);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
                 }
                 finally
                 {
@@ -304,7 +320,13 @@ namespace SeweralIdeas.StateMachines
                         try
                         {
                             m_messageConsumed = false;
+#if UNITY_PROFILING
+                            Profiler.BeginSample(message.ReceiverName);
+#endif
                             message.Dispatch(m_topState);
+#if UNITY_PROFILING
+                            Profiler.EndSample();
+#endif
                         }
                         finally
                         {

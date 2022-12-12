@@ -8,6 +8,8 @@ namespace SeweralIdeas.StateMachines
         public abstract void Dispatch(State state);
         public abstract object GetHandler();
 
+        public abstract string ReceiverName { get; }
+        
         internal virtual void Reset()
         {
         }
@@ -35,8 +37,10 @@ namespace SeweralIdeas.StateMachines
 
         public override string ToString()
         {
-            return string.Format("Message {0}()", typeof(TReceiver).Name);
+            return $"Message {typeof(TReceiver).Name}()";
         }
+
+        public override string ReceiverName => typeof(TReceiver).Name;
 
         public Handler<TReceiver> handler { get; private set; }
         public override object GetHandler() => handler;
@@ -65,9 +69,11 @@ namespace SeweralIdeas.StateMachines
 
         public override string ToString()
         {
-            return string.Format("Message {0}({1})", typeof(TReceiver).Name, arg0);
+            return $"Message {typeof(TReceiver).Name}({arg0})";
         }
 
+        public override string ReceiverName => typeof(TReceiver).Name;
+        
         public Handler<TReceiver, TArg> handler { get; private set; }
         public TArg arg0 { get; private set; }
         public override object GetHandler() => handler;

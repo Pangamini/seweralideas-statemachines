@@ -1,4 +1,8 @@
 # Changelog
+## [0.2.3]
+### Added
+- StateMachine messages in Unity profiler
+- Assert when the transition target state is not a part of the state machine
 ## [0.2.2]
 ### Added
 - ConcurrentStateMachine wrapper for StateMachine
