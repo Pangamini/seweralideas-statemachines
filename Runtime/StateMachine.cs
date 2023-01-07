@@ -15,6 +15,7 @@ using UnityEngine.Profiling;
 
 using System;
 using System.Collections.Generic;
+using Debug = System.Diagnostics.Debug;
 
 namespace SeweralIdeas.StateMachines
 {
