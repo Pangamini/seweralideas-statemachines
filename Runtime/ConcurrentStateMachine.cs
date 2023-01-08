@@ -7,7 +7,7 @@ namespace SeweralIdeas.StateMachines
     public class ConcurrentStateMachine
     {
         private readonly StateMachine m_machine;
-        private readonly ReaderWriterLockSlim m_lock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+        private readonly ReaderWriterLockSlim m_lock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
         private readonly ConcurrentQueue<Message> m_messageQueue = new ConcurrentQueue<Message>();
         private readonly Action m_onMessagesAvailable;
         private int m_hasMessages = 0;
