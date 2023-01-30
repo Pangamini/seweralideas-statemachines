@@ -140,7 +140,7 @@ namespace SeweralIdeas.StateMachines
             stateMachine.TransitTo(destination, arg);
         }
 
-        internal virtual void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
+        internal virtual bool ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var iterState = this;
             var propagateUntil = m_hasTopState.rootState;
@@ -159,15 +159,17 @@ namespace SeweralIdeas.StateMachines
                     Profiler.EndSample();
 #endif
                     if (sm.m_messageConsumed)
-                        return;
+                        return true;
                 }
 
                 if (iterState == propagateUntil) break;
                 iterState = iterState.parentState.state;
             }
+
+            return false;
         }
 
-        internal virtual void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
+        internal virtual bool ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var iterState = this;
             var propagateUntil = m_hasTopState.rootState;
@@ -186,12 +188,14 @@ namespace SeweralIdeas.StateMachines
                     Profiler.EndSample();
 #endif
                     if (sm.m_messageConsumed)
-                        return;
+                        return true;
                 }
 
                 if (iterState == propagateUntil) break;
                 iterState = iterState.parentState.state;
             }
+
+            return false;
         }
 
         internal virtual void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
@@ -559,7 +563,7 @@ namespace SeweralIdeas.StateMachines
             base.Shutdown();
         }
 
-        internal sealed override void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
+        internal sealed override bool ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var anyBranchConsumed = false;
             foreach (var branch in m_branches)
@@ -569,11 +573,15 @@ namespace SeweralIdeas.StateMachines
                 anyBranchConsumed |= stateMachine.m_messageConsumed;
             }
 
-            if (!anyBranchConsumed)
-                base.ReceiveMessage(handler);
+            if (anyBranchConsumed)
+            {
+                return true;
+            }
+
+            return base.ReceiveMessage(handler);
         }
 
-        internal sealed override void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
+        internal sealed override bool ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var anyBranchConsumed = false;
             foreach (var branch in m_branches)
@@ -583,8 +591,12 @@ namespace SeweralIdeas.StateMachines
                 anyBranchConsumed |= stateMachine.m_messageConsumed;
             }
 
-            if (!anyBranchConsumed)
-                base.ReceiveMessage(handler, arg);
+            if (anyBranchConsumed)
+            {
+                return true;
+            }
+
+            return base.ReceiveMessage(handler, arg);
         }
     }
 

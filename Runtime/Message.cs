@@ -5,7 +5,7 @@ namespace SeweralIdeas.StateMachines
     internal abstract class Message
     {
         public abstract void Destroy();
-        public abstract void Dispatch(State state);
+        public abstract bool Dispatch(State state);
         public abstract object GetHandler();
 
         public abstract string ReceiverName { get; }
@@ -30,9 +30,9 @@ namespace SeweralIdeas.StateMachines
             s_pool.Return(this);
         }
 
-        public override void Dispatch(State state)
+        public override bool Dispatch(State state)
         {
-            state.ReceiveMessage(handler);
+            return state.ReceiveMessage(handler);
         }
 
         public override string ToString()
@@ -62,9 +62,9 @@ namespace SeweralIdeas.StateMachines
             s_pool.Return(this);
         }
 
-        public override void Dispatch(State state)
+        public override bool Dispatch(State state)
         {
-            state.ReceiveMessage(handler, arg0);
+            return state.ReceiveMessage(handler, arg0);
         }
 
         public override string ToString()

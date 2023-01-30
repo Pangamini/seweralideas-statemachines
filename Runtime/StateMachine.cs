@@ -177,7 +177,7 @@ namespace SeweralIdeas.StateMachines
                 };
         }
 
-        internal void TransitTo(IState destination)
+        internal bool TransitTo(IState destination)
         {
             InitGuard();
             Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
@@ -188,7 +188,7 @@ namespace SeweralIdeas.StateMachines
                 try
                 {
                     m_messageConsumed = false;
-                    m_topState.ReceiveMessage(handler, destination);
+                    return m_topState.ReceiveMessage(handler, destination);
                 }
                 finally
                 {
@@ -198,8 +198,9 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
-                HandleMessagesInternal();
+                var message = Message<ITransition, IState>.Create(handler, destination);
+                m_transitionQueue.Enqueue(message);
+                return HandleMessagesInternal(message);
             }
         }
 
@@ -225,9 +226,9 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_transitionQueue.Enqueue(
-                    Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination, arg)));
-                HandleMessagesInternal();
+                var message = Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination, arg));
+                m_transitionQueue.Enqueue(message);
+                HandleMessagesInternal(message);
             }
         }
 
@@ -237,31 +238,7 @@ namespace SeweralIdeas.StateMachines
             HandleMessagesInternal();
         }
 
-        public void SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
-        {
-            InitGuard();
-
-            if (StartMessageReceiving())
-            {
-                try
-                {
-                    m_messageConsumed = false;
-                    m_topState.ReceiveMessage(handler);
-                }
-                finally
-                {
-                    StopMessageReceiving();
-                    HandleMessagesInternal();
-                }
-            }
-            else
-            {
-                m_messageQueue.Enqueue(Message<TReceiver>.Create(handler));
-                HandleMessagesInternal();
-            }
-        }
-
-        public void SendMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
+        public bool SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
         {
             InitGuard();
 
@@ -273,30 +250,69 @@ namespace SeweralIdeas.StateMachines
 #if UNITY_PROFILING
                     Profiler.BeginSample(typeof(TReceiver).Name);
 #endif
-                    m_topState.ReceiveMessage(handler, arg);
-#if UNITY_PROFILING
-                    Profiler.EndSample();
-#endif
+                    return m_topState.ReceiveMessage(handler);
                 }
                 finally
                 {
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
                     StopMessageReceiving();
                     HandleMessagesInternal();
                 }
             }
             else
             {
-                m_messageQueue.Enqueue(Message<TReceiver, TArg>.Create(handler, arg));
-                HandleMessagesInternal();
+                var message = Message<TReceiver>.Create(handler);
+                m_messageQueue.Enqueue(message);
+                return HandleMessagesInternal(message);
+            }
+        }
+
+        public bool SendMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
+        {
+            InitGuard();
+
+            if (StartMessageReceiving())
+            {
+                try
+                {
+                    m_messageConsumed = false;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(typeof(TReceiver).Name);
+#endif
+                    return m_topState.ReceiveMessage(handler, arg);
+                }
+                finally
+                {
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
+                    StopMessageReceiving();
+                    HandleMessagesInternal();
+                }
+            }
+            else
+            {
+                var message = Message<TReceiver, TArg>.Create(handler, arg);
+                m_messageQueue.Enqueue(message);
+                return HandleMessagesInternal(message);
             }
         }
 
         private void HandleMessagesInternal()
         {
+            HandleMessagesInternal(null);
+        }
+
+        private bool HandleMessagesInternal(Message messageToCheck)
+        {
             if (!StartMessageReceiving())
             {
-                return;
+                return false;
             }
+
+            bool checkedMessageReceived = false;
             
             try
             {
@@ -324,8 +340,13 @@ namespace SeweralIdeas.StateMachines
 #if UNITY_PROFILING
                             Profiler.BeginSample(message.ReceiverName);
 #endif
-                            message.Dispatch(m_topState);
+                            bool received = message.Dispatch(m_topState);
 #if UNITY_PROFILING
+                            if (ReferenceEquals(message, messageToCheck))
+                            {
+                                checkedMessageReceived = received;
+                            }
+                            
                             Profiler.EndSample();
 #endif
                         }
@@ -343,7 +364,8 @@ namespace SeweralIdeas.StateMachines
             {
                 StopMessageReceiving();
             }
-            
+
+            return checkedMessageReceived;
         }
 
 #if UNITY
