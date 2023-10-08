@@ -241,12 +241,18 @@ namespace SeweralIdeas.StateMachines
         {
             InitGuard();
 
-            if (StartMessageReceiving())
+            if(StartMessageReceiving())
             {
                 try
                 {
                     m_messageConsumed = false;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(typeof( TReceiver ).Name);
+#endif
                     m_topState.ReceiveMessage(handler);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
                 }
                 finally
                 {
