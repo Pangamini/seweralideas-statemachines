@@ -20,18 +20,21 @@ namespace SeweralIdeas.StateMachines.Editor
             }
         }
 
-        private delegate object MachineGetter(object obj);
         [SerializeField] private bool m_lockSelection = false;
         [SerializeField] private GameObject m_selectedGameObject;
-        private GameObject m_scannedGameObject;
         [SerializeField] private FieldRecord m_selectedField;
         [SerializeField] private StateMachine.GUISettings m_guiSettings = new StateMachine.GUISettings();
+        
+        [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> m_machines = new List<(FieldRecord record, MachineGetter getter)>();
+        [System.NonSerialized] private GUIContent[] m_machineOptions = System.Array.Empty<GUIContent>();
 
+        private delegate object MachineGetter(object obj);
+        private GameObject m_scannedGameObject;
         private StateMachine m_selectedMachine;
         private int m_selectedMachineIndex;
         private bool m_showSettings;
-        [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> m_machines = new List<(FieldRecord record, MachineGetter getter)>();
-        [System.NonSerialized] private GUIContent[] m_machineOptions = System.Array.Empty<GUIContent>();
+
+        private GUIStyle m_toolbarButtonStyle;
 
         [MenuItem("Window/Analysis/StateMachine Debugger")]
         static void Init()
@@ -43,20 +46,15 @@ namespace SeweralIdeas.StateMachines.Editor
         
         private void OnGUI()
         {
+            m_toolbarButtonStyle ??= "toolbarbutton";
+                
             using (new GUILayout.HorizontalScope("Toolbar"))
             {
-                //GUIContent label;
-                //if (m_selectedMachineIndex >= 0 && m_selectedMachineIndex < m_machines.Count)
-                //    label = m_machineOptions[m_selectedMachineIndex];
-                //else
-                //    label = GUIContent.none;
-
                 m_selectedMachineIndex = EditorGUILayout.Popup(m_selectedMachineIndex, m_machineOptions, GUILayout.Width(200));
-                //m_selectedMachineIndex = AdvPopup.LayoutPopup(label, m_selectedMachineIndex, m_machineOptions, true, false, "ToolbarPopup", GUILayout.Width(200));
-
-                m_showSettings = GUILayout.Toggle(m_showSettings, "Settings", "toolbarbutton");
+                
+                m_showSettings = GUILayout.Toggle(m_showSettings, "Settings", m_toolbarButtonStyle);
                 EditorGUI.BeginChangeCheck();
-                m_lockSelection = GUILayout.Toggle(m_lockSelection, "Lock", "toolbarbutton");
+                m_lockSelection = GUILayout.Toggle(m_lockSelection, "Lock", m_toolbarButtonStyle);
                 if (EditorGUI.EndChangeCheck())
                     RefreshSelectedGameobject();
                 GUILayout.FlexibleSpace();
@@ -64,7 +62,7 @@ namespace SeweralIdeas.StateMachines.Editor
 
             if (m_showSettings)
             {
-                GUILayout.BeginVertical("Settings", "box");
+                GUILayout.BeginVertical("Settings", GUI.skin.box);
                 m_guiSettings.fieldsMode = (StateMachine.GUISettings.FieldsMode)EditorGUILayout.EnumPopup("show fields", m_guiSettings.fieldsMode);
                 m_guiSettings.stateColor_normal = EditorGUILayout.ColorField("normal color", m_guiSettings.stateColor_normal);
                 m_guiSettings.stateColor_active = EditorGUILayout.ColorField("active color", m_guiSettings.stateColor_active);
