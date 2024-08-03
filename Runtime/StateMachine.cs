@@ -247,7 +247,7 @@ namespace SeweralIdeas.StateMachines
                 {
                     m_messageConsumed = false;
 #if UNITY_PROFILING
-                    Profiler.BeginSample(typeof( TReceiver ).Name);
+                    Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
 #endif
                     m_topState.ReceiveMessage(handler);
 #if UNITY_PROFILING
@@ -277,7 +277,7 @@ namespace SeweralIdeas.StateMachines
                 {
                     m_messageConsumed = false;
 #if UNITY_PROFILING
-                    Profiler.BeginSample(typeof(TReceiver).Name);
+                    Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
 #endif
                     m_topState.ReceiveMessage(handler, arg);
 #if UNITY_PROFILING
@@ -378,8 +378,6 @@ namespace SeweralIdeas.StateMachines
         
         public void OnGUI(GUISettings settings)
         {
-            //GUILayout.Label("Root State: " + m_rootState);
-            //GUILayout.Label("Top State: " + m_topState);
             if (!IsInitialized)
             {
                 GUILayout.Label("StateMachine not initialized");
@@ -387,11 +385,6 @@ namespace SeweralIdeas.StateMachines
             }
             
             m_rootState.state.DrawGUI(settings, IsInitialized);
-            // if (m_messageQueue != null)
-            // {
-            //     foreach (var message in m_messageQueue)
-            //         GUILayout.Label(message.ToString());
-            // }
         }
 #endif
 
@@ -427,21 +420,4 @@ namespace SeweralIdeas.StateMachines
             public List<IStateBase> iBaseStates;
         }
     }
-
-    static class Extensions
-    {
-        public static bool TryDequeue<T>(this Queue<T> queue, out T element)
-        {
-            if (queue.Count > 0)
-            {
-                element = queue.Dequeue();
-                return true;
-            }
-
-            element = default;
-            return false;
-        }
-        
-    }
-    
 }
