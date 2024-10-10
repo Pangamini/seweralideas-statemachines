@@ -26,20 +26,15 @@ namespace SeweralIdeas.StateMachines
     /// <summary>
     /// State that implements this interface can be transited to without arguments
     /// </summary>
-    public interface IState : IStateBase { void Enter(); };
+    public interface IState : IStateBase { void Enter() {} };
 
     /// <summary>
     /// State that implements this interface can be transited to with a specified generic argument
     /// </summary>
     /// <typeparam name="TArg">Type of the transition argument</typeparam>
-    public interface IState<in TArg> : IStateBase
-    {
-        void Enter(TArg arg);
-    };
+    public interface IState<in TArg> : IStateBase { void Enter(TArg arg); };
 
-    public interface IParentState : IStateBase
-    {
-    }
+    public interface IParentState : IStateBase { }
 
     public static class StateExtensions
     {
@@ -62,9 +57,7 @@ namespace SeweralIdeas.StateMachines
     {
         State IStateBase.state => this;
 
-        internal State()
-        {
-        }
+        internal State() { }
 
         protected static bool Contains(IStateBase[] states, IStateBase state)
         {
