@@ -111,16 +111,31 @@ namespace SeweralIdeas.StateMachines
 
                 m_rootState.state.Initialize(context, this);
             }
-            catch
+            catch(Exception initializationException)
             {
-                m_rootState?.state?.Shutdown();
-                m_messageQueue.Clear();
-                m_transitionQueue.Clear();
-                this.actor = null;
-                InitializationState = InitState.Offline;
+                Exception shutdownException = null;
+                try
+                {
+                    m_rootState?.state?.Shutdown();
+                }
+                catch( Exception ex )
+                {
+                    shutdownException = ex;
+                }
+                finally
+                {
+                    m_messageQueue.Clear();
+                    m_transitionQueue.Clear();
+                    this.actor = null;
+                    InitializationState = InitState.Offline;
+                }
+                
+                if (shutdownException != null)
+                {
+                    throw new AggregateException("Initialization and shutdown both failed.", initializationException, shutdownException);
+                }
                 throw;
             }
-
             InitializationState = InitState.Initialized;
 
             try
@@ -151,15 +166,20 @@ namespace SeweralIdeas.StateMachines
             m_messageConsumed = false;
             m_rootState.state.Exit();
 
-            m_rootState.state.Shutdown();
-            
+            try
+            {
+                m_rootState.state.Shutdown();
+            }
+            finally
+            {
 #if UNITY
-            Debug.Assert(m_messageQueue.Count == 0);
-            Debug.Assert(m_transitionQueue.Count == 0);
+                Debug.Assert(m_messageQueue.Count == 0);
+                Debug.Assert(m_transitionQueue.Count == 0);
 #endif
-            m_messageQueue.Clear();
-            m_transitionQueue.Clear();
-            InitializationState = InitState.Offline;
+                m_messageQueue.Clear();
+                m_transitionQueue.Clear();
+                InitializationState = InitState.Offline;
+            }
         }
 
 
