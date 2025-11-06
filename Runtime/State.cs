@@ -6,7 +6,6 @@
 #endif
 
 #if UNITY
-using UnityEditor;
 using UnityEngine;
 #endif
 
@@ -285,23 +284,23 @@ namespace SeweralIdeas.StateMachines
     public class SimpleState<TActor, TParent> : State<TActor, TParent> where TParent : IParentState where TActor : class
     {
 
-        internal override sealed void EnterBegin()
+        internal sealed override void EnterBegin()
         {
             base.EnterBegin();
         }
 
-        internal override sealed void EnterEnd()
+        internal sealed override void EnterEnd()
         {
             base.EnterEnd();
         }
 
-        internal override sealed void Exit()
+        internal sealed override void Exit()
         {
             OnExit();
             base.Exit();
         }
 
-        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
+        internal sealed override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
             base.Initialize(context, hasTopState);
             OnInitialize();
@@ -309,13 +308,13 @@ namespace SeweralIdeas.StateMachines
         
         protected virtual void OnInitialize() { }
 
-        internal override sealed void Shutdown()
+        internal sealed override void Shutdown()
         {
             base.Shutdown();
         }
 
 #if UNITY
-        public override sealed void DrawGUI(StateMachine.GUISettings settings, bool isActive)
+        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
             using (StateGUI(this, settings, isActive))
             {             
@@ -364,26 +363,26 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        internal override sealed void EnterBegin()
+        internal sealed override void EnterBegin()
         {
             base.EnterBegin();
             m_activeSubState = m_entrySubState?.state;
         }
 
-        internal override sealed void EnterEnd()
+        internal sealed override void EnterEnd()
         {
             base.EnterEnd();
             m_entrySubState?.StateEnter();
         }
 
-        internal override sealed void Exit()
+        internal sealed override void Exit()
         {
             m_activeSubState?.Exit();
             OnExit();
             base.Exit();
         }
 
-        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
+        internal sealed override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
             base.Initialize(context, hasTopState);
             var childStates = context.iBaseStates;
@@ -425,7 +424,7 @@ namespace SeweralIdeas.StateMachines
 
         protected abstract void OnInitialize(out IState entrySubState, List<IStateBase> subStates);
 
-        internal override sealed void Shutdown()
+        internal sealed override void Shutdown()
         {
             foreach (var child in m_childStates)
             {
@@ -437,7 +436,7 @@ namespace SeweralIdeas.StateMachines
         }
 
 #if UNITY
-        public override sealed void DrawGUI(StateMachine.GUISettings settings, bool isActive)
+        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
             using (StateGUI(this, settings, isActive))
             {
@@ -469,7 +468,7 @@ namespace SeweralIdeas.StateMachines
         public int ChildCount => m_branches.Length;
 
 #if UNITY
-        public override sealed void DrawGUI(StateMachine.GUISettings settings, bool isActive)
+        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
             using (StateGUI(this, settings, isActive))
             {
@@ -482,19 +481,19 @@ namespace SeweralIdeas.StateMachines
         }
 #endif
 
-        internal override sealed void EnterBegin()
+        internal sealed override void EnterBegin()
         {
             base.EnterBegin();
         }
 
-        internal override sealed void EnterEnd()
+        internal sealed override void EnterEnd()
         {
             base.EnterEnd();
             foreach (var subState in m_branches)
                 subState.rootState.StateEnter();
         }
 
-        internal override sealed void Exit()
+        internal sealed override void Exit()
         {
             foreach (var subState in m_branches)
                 subState.rootState.state.Exit();
@@ -541,7 +540,7 @@ namespace SeweralIdeas.StateMachines
 
         protected abstract void OnInitialize(List<IState> subStates);
 
-        internal override sealed void Shutdown()
+        internal sealed override void Shutdown()
         {
             if (m_branches != null)
             {
@@ -555,7 +554,7 @@ namespace SeweralIdeas.StateMachines
             base.Shutdown();
         }
 
-        internal override sealed void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
+        internal sealed override void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var anyBranchConsumed = false;
             foreach (var branch in m_branches)
@@ -569,7 +568,7 @@ namespace SeweralIdeas.StateMachines
                 base.ReceiveMessage(handler);
         }
 
-        internal override sealed void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
+        internal sealed override void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var anyBranchConsumed = false;
             foreach (var branch in m_branches)
