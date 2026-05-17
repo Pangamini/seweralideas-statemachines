@@ -21,7 +21,7 @@ namespace SeweralIdeas.StateMachines
             public bool show;
         }
 
-        private readonly Field[] m_fields;
+        private readonly Field[] _fields;
 
         private StateDebugInfo(Type type)
         {
@@ -42,12 +42,12 @@ namespace SeweralIdeas.StateMachines
                 }
                 type = type.BaseType;
             }
-            m_fields = list.ToArray();
+            _fields = list.ToArray();
         }
 
-        public Field this[int index] => m_fields[index];
+        public Field this[int index] => _fields[index];
 
-        public int Count => m_fields.Length;
+        public int Count => _fields.Length;
 
 
         public static StateDebugInfo Get(Type type)

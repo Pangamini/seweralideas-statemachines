@@ -7,17 +7,17 @@ using UnityEngine.UI;
 
 public class DoorAndLeverExample : MonoBehaviour
 {
-    [SerializeField] private Image m_doorFill;
-    [SerializeField] private Button m_triggerButton;
-    [SerializeField] private Button m_leverSwitch;
-    [SerializeField] private GameObject m_leverIconOn;
-    [SerializeField] private GameObject m_leverIconOff;
+    [SerializeField] private Image _doorFill;
+    [SerializeField] private Button _triggerButton;
+    [SerializeField] private Button _leverSwitch;
+    [SerializeField] private GameObject _leverIconOn;
+    [SerializeField] private GameObject _leverIconOff;
     
     [Header("GUI")]
-    [SerializeField] private RectTransform m_guiRect;
+    [SerializeField] private RectTransform _guiRect;
     
-    [SerializeField] private StateMachine.GUISettings m_guiSettings;
-    private StateMachine m_stateMachine;
+    [SerializeField] private StateMachine.GUISettings _guiSettings;
+    private StateMachine _stateMachine;
 
     private interface IDontHandleThis { void Unhandled(); }
     private interface IUpdate { void Update(float deltaTime); }
@@ -31,30 +31,30 @@ public class DoorAndLeverExample : MonoBehaviour
     private static readonly Handler<IOnClickButton> msg_onClickButton = handler => handler.OnClickButton();
     private static readonly Handler<ISetDoorDestination, bool> msg_setDoorDestination = (handler, shouldOpen) => handler.SetDoorDestination(shouldOpen);
 
-    private float m_doorPosition;
+    private float _doorPosition;
 
 
     private float DoorPosition
     {
-        get => m_doorPosition;
+        get => _doorPosition;
         set
         {
-            m_doorPosition = value;
-            m_doorFill.fillAmount =  1 - value;
+            _doorPosition = value;
+            _doorFill.fillAmount =  1 - value;
         }
     }
     
     void Awake()
     {
-        m_stateMachine = new StateMachine("DoorAndLever", new State_Root(), Debug.Log);
-        m_stateMachine.logFlags = StateMachine.LogFlags.EnterExit;
-        m_triggerButton.onClick.AddListener( () => m_stateMachine.SendMessage(msg_onClickButton));
-        m_leverSwitch.onClick.AddListener(OnClickLever);
+        _stateMachine = new StateMachine("DoorAndLever", new State_Root(), Debug.Log);
+        _stateMachine.logFlags = StateMachine.LogFlags.EnterExit;
+        _triggerButton.onClick.AddListener( () => _stateMachine.SendMessage(msg_onClickButton));
+        _leverSwitch.onClick.AddListener(OnClickLever);
     }
 
     private void OnClickLever()
     {
-         m_stateMachine.SendMessage(msg_onClickLever);
+         _stateMachine.SendMessage(msg_onClickLever);
     }
 
     private void OnEnable()
@@ -62,7 +62,7 @@ public class DoorAndLeverExample : MonoBehaviour
         try
         {
             Profiler.BeginSample("DoorAndLeverExample.OnEnable", this);
-            m_stateMachine.Initialize(this);
+            _stateMachine.Initialize(this);
         }
         catch (Exception)
         {
@@ -77,13 +77,13 @@ public class DoorAndLeverExample : MonoBehaviour
 
     private void OnDisable()
     {
-        m_stateMachine.Shutdown();
+        _stateMachine.Shutdown();
     }
 
     private void Update()
     {
-        m_stateMachine.SendMessage(msg_update, Time.deltaTime);
-        m_stateMachine.SendMessage(msg_dontHandleThis);
+        _stateMachine.SendMessage(msg_update, Time.deltaTime);
+        _stateMachine.SendMessage(msg_dontHandleThis);
     }
 
     private class State_Root : OrthogonalState<DoorAndLeverExample>, IState
@@ -101,35 +101,35 @@ public class DoorAndLeverExample : MonoBehaviour
 
         private class State_LeverRoot : HierarchicalState<DoorAndLeverExample, State_Root>, IState
         {
-            private readonly State_SwitchedOn m_state_switchedOn = new State_SwitchedOn();
-            private readonly State_SwitchedOff m_state_switchedOff = new State_SwitchedOff();
+            private readonly State_SwitchedOn _state_switchedOn = new State_SwitchedOn();
+            private readonly State_SwitchedOff _state_switchedOff = new State_SwitchedOff();
 
             protected override void OnEnter()
             {
-                actor.m_leverIconOn.SetActive(false);
-                actor.m_leverIconOff.SetActive(false);
+                actor._leverIconOn.SetActive(false);
+                actor._leverIconOff.SetActive(false);
             }
 
             protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
             {
-                entrySubState = m_state_switchedOn;
-                subStates.Add(m_state_switchedOn);
-                subStates.Add(m_state_switchedOff);
+                entrySubState = _state_switchedOn;
+                subStates.Add(_state_switchedOn);
+                subStates.Add(_state_switchedOff);
             }
 
             private class State_SwitchedOn : SimpleState<DoorAndLeverExample, State_LeverRoot>, IState, IOnClickLever, IOnClickButton
             {
-                void IState.Enter() => actor.m_leverIconOn.SetActive(true);
-                protected override void OnExit() => actor.m_leverIconOn.SetActive(false);
-                void IOnClickLever.OnClickLever() => TransitTo(parent.m_state_switchedOff);
+                void IState.Enter() => actor._leverIconOn.SetActive(true);
+                protected override void OnExit() => actor._leverIconOn.SetActive(false);
+                void IOnClickLever.OnClickLever() => TransitTo(parent._state_switchedOff);
                 void IOnClickButton.OnClickButton() => stateMachine.SendMessage(msg_setDoorDestination, true);
             }
             
             private class State_SwitchedOff : SimpleState<DoorAndLeverExample, State_LeverRoot>, IState, IOnClickLever, IOnClickButton
             {
-                void IState.Enter() => actor.m_leverIconOff.SetActive(true);
-                protected override void OnExit() => actor.m_leverIconOff.SetActive(false);
-                void IOnClickLever.OnClickLever() => TransitTo(parent.m_state_switchedOn);
+                void IState.Enter() => actor._leverIconOff.SetActive(true);
+                protected override void OnExit() => actor._leverIconOff.SetActive(false);
+                void IOnClickLever.OnClickLever() => TransitTo(parent._state_switchedOn);
                 void IOnClickButton.OnClickButton() => stateMachine.SendMessage(msg_setDoorDestination, false);
             }
 
@@ -138,26 +138,26 @@ public class DoorAndLeverExample : MonoBehaviour
 
         private class State_DoorRoot : HierarchicalState<DoorAndLeverExample>, IState
         {
-            private IState m_state_open;
-            private IState m_state_closed;
-            private IState<float> m_state_opening;
-            private IState<float> m_state_closing;
+            private IState _state_open;
+            private IState _state_closed;
+            private IState<float> _state_opening;
+            private IState<float> _state_closing;
 
             public State_DoorRoot()
             {
-                m_state_open    = new State_Open();
-                m_state_closed  = new State_Closed();
-                m_state_opening = new State_Opening(m_state_open);
-                m_state_closing = new State_Closing(m_state_closed);
+                _state_open    = new State_Open();
+                _state_closed  = new State_Closed();
+                _state_opening = new State_Opening(_state_open);
+                _state_closing = new State_Closing(_state_closed);
             }
             
             protected override void OnInitialize(out IState entrySubState, List<IStateBase> stateBases)
             {
-                entrySubState = m_state_closed;
-                stateBases.Add(m_state_open);
-                stateBases.Add(m_state_closed);
-                stateBases.Add(m_state_opening);
-                stateBases.Add(m_state_closing);
+                entrySubState = _state_closed;
+                stateBases.Add(_state_open);
+                stateBases.Add(_state_closed);
+                stateBases.Add(_state_opening);
+                stateBases.Add(_state_closing);
             }
 
             private class State_Open : SimpleState<DoorAndLeverExample, State_DoorRoot>, IState, ISetDoorDestination
@@ -172,7 +172,7 @@ public class DoorAndLeverExample : MonoBehaviour
                     if (shouldOpen)
                         return;
                     
-                    TransitTo(parent.m_state_closing, 0.5f);
+                    TransitTo(parent._state_closing, 0.5f);
                 }
             }
 
@@ -188,35 +188,35 @@ public class DoorAndLeverExample : MonoBehaviour
                     if (!shouldOpen)
                         return;
                     
-                    TransitTo(parent.m_state_opening, 0.2f);
+                    TransitTo(parent._state_opening, 0.2f);
                 }
             }
 
             private abstract class State_DoorMoving : SimpleState<DoorAndLeverExample, State_DoorRoot>, IState<float>, IUpdate
             {
-                private IState m_transitTo;
-                private float m_targetPositiom;
+                private IState _transitTo;
+                private float _targetPositiom;
 
                 [ShowField]
-                protected float m_speed;
+                protected float _speed;
                 protected State_DoorMoving(float targetPositiom, IState transitTo)
                 {
-                    m_targetPositiom = targetPositiom;
-                    m_transitTo = transitTo;
+                    _targetPositiom = targetPositiom;
+                    _transitTo = transitTo;
                 }
 
                 void IState<float>.Enter(float speed)
                 {
-                    m_speed = speed;
+                    _speed = speed;
                 }
 
                 void IUpdate.Update(float deltaTime)
                 {
                     PropagateMessage();
-                    actor.DoorPosition = Mathf.MoveTowards(actor.DoorPosition, m_targetPositiom, deltaTime * m_speed);
-                    if (Math.Abs(actor.DoorPosition - m_targetPositiom) < float.Epsilon)
+                    actor.DoorPosition = Mathf.MoveTowards(actor.DoorPosition, _targetPositiom, deltaTime * _speed);
+                    if (Math.Abs(actor.DoorPosition - _targetPositiom) < float.Epsilon)
                     {
-                        TransitTo(m_transitTo);
+                        TransitTo(_transitTo);
                     }
                 }
 
@@ -232,11 +232,11 @@ public class DoorAndLeverExample : MonoBehaviour
                 {
                     if (shouldOpen)
                     {
-                        m_speed += 0.2f;
+                        _speed += 0.2f;
                     }
                     else
                     {
-                        TransitTo(parent.m_state_closing, 0.5f);
+                        TransitTo(parent._state_closing, 0.5f);
                     }
                 }
             }
@@ -256,7 +256,7 @@ public class DoorAndLeverExample : MonoBehaviour
     {
         Rect rect = new Rect(32, Screen.height * 0.5f, Screen.width - 64, Screen.height * 0.5f - 32);
         GUILayout.BeginArea(rect);
-        m_stateMachine.OnGUI(m_guiSettings);
+        _stateMachine.OnGUI(_guiSettings);
         GUILayout.EndArea();
     }
 }

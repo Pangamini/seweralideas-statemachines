@@ -43,29 +43,29 @@ namespace SeweralIdeas.StateMachines
 
         public object actor { get; private set; }
 
-        private readonly IState m_rootState;
-        private readonly Action<string> m_debugLog;
-        private readonly Queue<Message> m_messageQueue = new Queue<Message>();
-        private readonly Queue<Message> m_transitionQueue = new Queue<Message>();
+        private readonly IState _rootState;
+        private readonly Action<string> _debugLog;
+        private readonly Queue<Message> _messageQueue = new Queue<Message>();
+        private readonly Queue<Message> _transitionQueue = new Queue<Message>();
         
-        private State m_topState;
-        private bool m_receivingMessages;
+        private State _topState;
+        private bool _receivingMessages;
 
-        internal bool m_messageConsumed;
+        internal bool _messageConsumed;
         public LogFlags logFlags = 0;
         public readonly string Name;
 
         State IHasTopState.topState
         {
-            get => m_topState;
-            set => m_topState = value;
+            get => _topState;
+            set => _topState = value;
         }
 
-        IState IHasTopState.rootState => m_rootState;
+        IState IHasTopState.rootState => _rootState;
 
         public void WriteLine(string text)
         {
-            m_debugLog(text);
+            _debugLog(text);
         }
 
         public bool IsInitialized => InitializationState is InitState.Initialized or InitState.ShuttingDown;
@@ -81,9 +81,9 @@ namespace SeweralIdeas.StateMachines
 
         public StateMachine(string name, IState rootState, Action<string> debugLog = null)
         {
-            m_debugLog = debugLog ?? Console.WriteLine;
+            _debugLog = debugLog ?? Console.WriteLine;
             Name = name;
-            m_rootState = rootState;
+            _rootState = rootState;
         }
 
         public void Initialize(object actor)
@@ -97,8 +97,8 @@ namespace SeweralIdeas.StateMachines
             WriteLine($"{Name} initializing");
 
             this.actor = actor;
-            m_messageQueue.Clear();
-            m_transitionQueue.Clear();
+            _messageQueue.Clear();
+            _transitionQueue.Clear();
 
             try
             {
@@ -109,14 +109,14 @@ namespace SeweralIdeas.StateMachines
                     iBaseStates = new List<IStateBase>()
                 };
 
-                m_rootState.state.Initialize(context, this);
+                _rootState.state.Initialize(context, this);
             }
             catch(Exception initializationException)
             {
                 Exception shutdownException = null;
                 try
                 {
-                    m_rootState?.state?.Shutdown();
+                    _rootState?.state?.Shutdown();
                 }
                 catch( Exception ex )
                 {
@@ -124,8 +124,8 @@ namespace SeweralIdeas.StateMachines
                 }
                 finally
                 {
-                    m_messageQueue.Clear();
-                    m_transitionQueue.Clear();
+                    _messageQueue.Clear();
+                    _transitionQueue.Clear();
                     this.actor = null;
                     InitializationState = InitState.Offline;
                 }
@@ -145,8 +145,8 @@ namespace SeweralIdeas.StateMachines
                     throw new InvalidProgramException("This should not ever happen..?");
                 }
                 
-                m_messageConsumed = false;
-                m_rootState.StateEnter();
+                _messageConsumed = false;
+                _rootState.StateEnter();
             }
             finally
             {
@@ -163,21 +163,21 @@ namespace SeweralIdeas.StateMachines
             InitializationState = InitState.ShuttingDown;
             WriteLine($"{Name} shutting down");
 
-            m_messageConsumed = false;
-            m_rootState.state.Exit();
+            _messageConsumed = false;
+            _rootState.state.Exit();
 
             try
             {
-                m_rootState.state.Shutdown();
+                _rootState.state.Shutdown();
             }
             finally
             {
 #if UNITY
-                Debug.Assert(m_messageQueue.Count == 0);
-                Debug.Assert(m_transitionQueue.Count == 0);
+                Debug.Assert(_messageQueue.Count == 0);
+                Debug.Assert(_transitionQueue.Count == 0);
 #endif
-                m_messageQueue.Clear();
-                m_transitionQueue.Clear();
+                _messageQueue.Clear();
+                _transitionQueue.Clear();
                 InitializationState = InitState.Offline;
             }
         }
@@ -207,8 +207,9 @@ namespace SeweralIdeas.StateMachines
             {
                 try
                 {
-                    m_messageConsumed = false;
-                    m_topState.ReceiveMessage(handler, destination);
+                    _messageConsumed = false;
+                    _topState.ReceiveMessage(handler, destination);
+                    WarnUnclaimedTransition(destination?.state?.name);
                 }
                 finally
                 {
@@ -218,7 +219,7 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
+                _transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
                 HandleMessagesInternal();
             }
         }
@@ -227,15 +228,15 @@ namespace SeweralIdeas.StateMachines
         {
             InitGuard();
             Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
-            Debug.Assert(destination?.state?.stateMachine == this);
             var handler = TransitionHandler<TArg>.msg_transition;
 
             if (StartMessageReceiving())
             {
                 try
                 {
-                    m_messageConsumed = false;
-                    m_topState.ReceiveMessage(handler, (destination, arg));
+                    _messageConsumed = false;
+                    _topState.ReceiveMessage(handler, (destination, arg));
+                    WarnUnclaimedTransition(destination?.state?.name);
                 }
                 finally
                 {
@@ -245,15 +246,25 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_transitionQueue.Enqueue(
+                _transitionQueue.Enqueue(
                     Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination, arg)));
                 HandleMessagesInternal();
             }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void WarnUnclaimedTransition(string destinationName)
+        {
+            if (!_messageConsumed)
+            {
+                WriteLine($"{Name}: transition to {destinationName ?? "<null>"} was not claimed by any HierarchicalState on the active chain. " +
+                          "The target is not reachable from the currently active state — verify it is a sibling under a common hierarchical parent.");
+            }
+        }
+
         internal void SendMessage(Message message)
         {
-            m_messageQueue.Enqueue(message);
+            _messageQueue.Enqueue(message);
             HandleMessagesInternal();
         }
 
@@ -265,11 +276,11 @@ namespace SeweralIdeas.StateMachines
             {
                 try
                 {
-                    m_messageConsumed = false;
+                    _messageConsumed = false;
 #if UNITY_PROFILING
                     Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
 #endif
-                    m_topState.ReceiveMessage(handler);
+                    _topState.ReceiveMessage(handler);
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
@@ -282,7 +293,7 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_messageQueue.Enqueue(Message<TReceiver>.Create(handler));
+                _messageQueue.Enqueue(Message<TReceiver>.Create(handler));
                 HandleMessagesInternal();
             }
         }
@@ -295,11 +306,11 @@ namespace SeweralIdeas.StateMachines
             {
                 try
                 {
-                    m_messageConsumed = false;
+                    _messageConsumed = false;
 #if UNITY_PROFILING
                     Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
 #endif
-                    m_topState.ReceiveMessage(handler, arg);
+                    _topState.ReceiveMessage(handler, arg);
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
@@ -312,7 +323,7 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                m_messageQueue.Enqueue(Message<TReceiver, TArg>.Create(handler, arg));
+                _messageQueue.Enqueue(Message<TReceiver, TArg>.Create(handler, arg));
                 HandleMessagesInternal();
             }
         }
@@ -328,12 +339,13 @@ namespace SeweralIdeas.StateMachines
             {
                 while (InitializationState == InitState.Initialized)
                 {
-                    if (m_transitionQueue.TryDequeue(out Message transition))
+                    if (_transitionQueue.TryDequeue(out Message transition))
                     {
                         try
                         {
-                            m_messageConsumed = false;
-                            transition.Dispatch(m_topState);
+                            _messageConsumed = false;
+                            transition.Dispatch(_topState);
+                            WarnUnclaimedTransition("<queued transition>");
                         }
                         finally
                         {
@@ -342,15 +354,15 @@ namespace SeweralIdeas.StateMachines
                         continue;
                     }
 
-                    if (m_messageQueue.TryDequeue(out Message message))
+                    if (_messageQueue.TryDequeue(out Message message))
                     {
                         try
                         {
-                            m_messageConsumed = false;
+                            _messageConsumed = false;
 #if UNITY_PROFILING
                             Profiler.BeginSample(message.ReceiverName);
 #endif
-                            message.Dispatch(m_topState);
+                            message.Dispatch(_topState);
 #if UNITY_PROFILING
                             Profiler.EndSample();
 #endif
@@ -404,7 +416,7 @@ namespace SeweralIdeas.StateMachines
                 return;
             }
             
-            m_rootState.state.DrawGUI(settings, IsInitialized);
+            _rootState.state.DrawGUI(settings, IsInitialized);
         }
 #endif
 
@@ -416,14 +428,14 @@ namespace SeweralIdeas.StateMachines
 
         private bool StartMessageReceiving()
         {
-            bool wasNotReceiving = !m_receivingMessages;
-            m_receivingMessages = true;
+            bool wasNotReceiving = !_receivingMessages;
+            _receivingMessages = true;
             return wasNotReceiving;
         }
 
         private void StopMessageReceiving()
         {
-            m_receivingMessages = false;
+            _receivingMessages = false;
         }
 
         public class InitializationException : Exception

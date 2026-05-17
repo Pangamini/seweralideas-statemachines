@@ -5,11 +5,11 @@ namespace SeweralIdeas.StateMachines
 {
     internal class MessagePool<T> where T : Message, new()
     {
-        private ConcurrentBag<T> m_bag = new ConcurrentBag<T>();
+        private ConcurrentBag<T> _bag = new ConcurrentBag<T>();
 
         public T Take()
         {
-            if (!m_bag.TryTake(out T obj))
+            if (!_bag.TryTake(out T obj))
                 obj = new T();
 
             return obj;
@@ -18,7 +18,7 @@ namespace SeweralIdeas.StateMachines
         public void Return(T obj)
         {
             obj.Reset();
-            m_bag.Add(obj);
+            _bag.Add(obj);
         }
 
         /// <summary>

@@ -19,20 +19,38 @@ using System.Collections.Generic;
 namespace SeweralIdeas.StateMachines
 {
     /// <summary>
-    /// Every state must implement this interface
+    /// Marker base implemented by every state. Useful as a generic constraint when you want
+    /// "any state" without committing to a specific entry shape (<see cref="IState"/> /
+    /// <see cref="IState{TArg}"/>).
     /// </summary>
     public interface IStateBase { State state { get; } };
+
     /// <summary>
-    /// State that implements this interface can be transited to without arguments
+    /// A state that can be the target of a transition without an argument
+    /// (<c>TransitTo(someState)</c>). <see cref="Enter"/> has a default empty body via a
+    /// default-interface-method, so concrete states only need to define it when they have
+    /// entry-time work to do; an explicit empty <c>void IState.Enter() { }</c> stub is
+    /// unnecessary. A state may implement both <see cref="IState"/> and one or more
+    /// <see cref="IState{TArg}"/> if it is reachable via either kind of transition.
     /// </summary>
     public interface IState : IStateBase { void Enter() {} };
 
     /// <summary>
-    /// State that implements this interface can be transited to with a specified generic argument
+    /// A state that can be the target of a transition with a typed argument
+    /// (<c>TransitTo(someState, arg)</c>). The <see cref="Enter(TArg)"/> implementation
+    /// receives the argument before <c>OnEnter</c> runs. A single state class may implement
+    /// multiple <see cref="IState{TArg}"/> with different <typeparamref name="TArg"/> types
+    /// to accept different transition payloads.
     /// </summary>
     /// <typeparam name="TArg">Type of the transition argument</typeparam>
     public interface IState<in TArg> : IStateBase { void Enter(TArg arg); };
 
+    /// <summary>
+    /// Marker implemented by composite states (<see cref="HierarchicalState{TActor}"/> and
+    /// <see cref="OrthogonalState{TActor}"/>). Used as the <c>TParent</c> generic constraint
+    /// on <c>SimpleState&lt;TActor, TParent&gt;</c> and friends, giving child states a
+    /// strongly-typed <c>parent</c> reference.
+    /// </summary>
     public interface IParentState : IStateBase { }
 
     public static class StateExtensions
@@ -138,14 +156,14 @@ namespace SeweralIdeas.StateMachines
         internal virtual void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var iterState = this;
-            var propagateUntil = m_hasTopState.rootState;
+            var propagateUntil = _hasTopState.rootState;
             var sm = stateMachine;
 
             while (true)
             {
                 if (iterState is TReceiver receiver)
                 {
-                    sm.m_messageConsumed = true;
+                    sm._messageConsumed = true;
 #if UNITY_PROFILING
                     Profiler.BeginSample(GetType().FullName);
 #endif
@@ -153,7 +171,7 @@ namespace SeweralIdeas.StateMachines
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
-                    if (sm.m_messageConsumed)
+                    if (sm._messageConsumed)
                         return;
                 }
 
@@ -165,14 +183,14 @@ namespace SeweralIdeas.StateMachines
         internal virtual void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var iterState = this;
-            var propagateUntil = m_hasTopState.rootState;
+            var propagateUntil = _hasTopState.rootState;
             var sm = stateMachine;
 
             while (true)
             {
                 if (iterState is TReceiver receiver)
                 {
-                    sm.m_messageConsumed = true;
+                    sm._messageConsumed = true;
 #if UNITY_PROFILING
                     Profiler.BeginSample(GetType().FullName);
 #endif
@@ -180,7 +198,7 @@ namespace SeweralIdeas.StateMachines
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
-                    if (sm.m_messageConsumed)
+                    if (sm._messageConsumed)
                         return;
                 }
 
@@ -191,7 +209,7 @@ namespace SeweralIdeas.StateMachines
 
         internal virtual void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
-            m_hasTopState = hasTopState;
+            _hasTopState = hasTopState;
             stateMachine = context.stateMachine;
             //OnInitialize();
         }
@@ -199,7 +217,7 @@ namespace SeweralIdeas.StateMachines
         internal virtual void Shutdown()
         {
             OnShutdown();
-            m_hasTopState = null;
+            _hasTopState = null;
             stateMachine = null;
             parentState = null;
         }
@@ -208,7 +226,7 @@ namespace SeweralIdeas.StateMachines
 
         internal virtual void EnterBegin()
         {
-            m_hasTopState.topState = this;
+            _hasTopState.topState = this;
 
             //Debug.Assert(stateMachine.receivingMessage);
             if (stateMachine.logFlags.HasFlag(StateMachine.LogFlags.EnterExit))
@@ -231,17 +249,17 @@ namespace SeweralIdeas.StateMachines
                 stateMachine.WriteLine($"{stateMachine.Name} exiting {name}");
             }
 
-            if (m_hasTopState.rootState == this)
-                m_hasTopState.topState = m_hasTopState.rootState.state;
+            if (_hasTopState.rootState == this)
+                _hasTopState.topState = _hasTopState.rootState.state;
             else
-                m_hasTopState.topState = parentState.state;
+                _hasTopState.topState = parentState.state;
         }
 
         protected virtual void OnEnter() { }
         protected virtual void OnExit() { }
 
         public StateMachine stateMachine { get; private set; }
-        private IHasTopState m_hasTopState;
+        private IHasTopState _hasTopState;
 
         public static implicit operator bool(State state)
         {
@@ -250,18 +268,36 @@ namespace SeweralIdeas.StateMachines
 
         public void PropagateMessage()
         {
-            stateMachine.m_messageConsumed = false;
+            stateMachine._messageConsumed = false;
         }
     }
 
     public abstract class State<TActor, TParent> : State where TParent : IParentState where TActor : class
     {
-        public TActor actor { get; private set; }
+        private TActor _actor;
+        public TActor actor
+        {
+            get
+            {
+                AssertInitialized();
+                return _actor;
+            }
+            private set => _actor = value;
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void AssertInitialized()
+        {
+            if (stateMachine == null)
+                throw new InvalidOperationException(
+                    $"Cannot access actor on state {GetType().Name} before StateMachine.Initialize. " +
+                    "States must not access actor from their constructors — use OnInitialize instead.");
+        }
 
         internal State()
         {
         }
-        
+
         internal override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
             actor = context.stateMachine.actor as TActor;
@@ -269,13 +305,13 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        private TParent m_parent;
-        public TParent parent => m_parent;
+        private TParent _parent;
+        public TParent parent => _parent;
 
         internal override IParentState parentState
         {
-            get => m_parent;
-            set => m_parent = (TParent)value;
+            get => _parent;
+            set => _parent = (TParent)value;
         }
     }
 
@@ -330,20 +366,20 @@ namespace SeweralIdeas.StateMachines
 
     public abstract class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
     {
-        private State m_activeSubState;
-        private IState m_entrySubState;
+        private State _activeSubState;
+        private IState _entrySubState;
 
-        private State[] m_childStates;
+        private State[] _childStates;
 
-        public int ChildCount => m_childStates.Length;
-        public State GetChild(int index) => m_childStates[index];
+        public int ChildCount => _childStates.Length;
+        public State GetChild(int index) => _childStates[index];
 
         void StateMachine.ITransition.TransitTo(IState state)
         {
-            if (Contains(m_childStates, state.state))
+            if (Contains(_childStates, state.state))
             {
-                m_activeSubState?.Exit();
-                m_activeSubState = state.state;
+                _activeSubState?.Exit();
+                _activeSubState = state.state;
                 state.StateEnter();
                 return;
             }
@@ -352,10 +388,10 @@ namespace SeweralIdeas.StateMachines
 
         void StateMachine.ITransition.TransitTo<TArg>(IState<TArg> state, TArg arg)
         {
-            if (Contains(m_childStates, state.state))
+            if (Contains(_childStates, state.state))
             {
-                m_activeSubState?.Exit();
-                m_activeSubState = state.state;
+                _activeSubState?.Exit();
+                _activeSubState = state.state;
                 state.StateEnter(arg);
                 return;
             }
@@ -366,18 +402,18 @@ namespace SeweralIdeas.StateMachines
         internal sealed override void EnterBegin()
         {
             base.EnterBegin();
-            m_activeSubState = m_entrySubState?.state;
+            _activeSubState = _entrySubState?.state;
         }
 
         internal sealed override void EnterEnd()
         {
             base.EnterEnd();
-            m_entrySubState?.StateEnter();
+            _entrySubState?.StateEnter();
         }
 
         internal sealed override void Exit()
         {
-            m_activeSubState?.Exit();
+            _activeSubState?.Exit();
             OnExit();
             base.Exit();
         }
@@ -386,20 +422,20 @@ namespace SeweralIdeas.StateMachines
         {
             base.Initialize(context, hasTopState);
             var childStates = context.iBaseStates;
-            OnInitialize(out m_entrySubState, childStates);
+            OnInitialize(out _entrySubState, childStates);
 
             if (childStates.IndexOf(null) != -1)
             {
                 throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
             }
             
-            bool addEntrySubState = m_entrySubState != null && !childStates.Contains(m_entrySubState);
+            bool addEntrySubState = _entrySubState != null && !childStates.Contains(_entrySubState);
             if (addEntrySubState)
             {
-                childStates.Add(m_entrySubState);
+                childStates.Add(_entrySubState);
             }
             
-            m_childStates = new State[childStates.Count];
+            _childStates = new State[childStates.Count];
             
             for (int i = 0; i < childStates.Count; ++i)
             {
@@ -411,12 +447,12 @@ namespace SeweralIdeas.StateMachines
                 }
 
                 child.parentState = this;
-                m_childStates[i] = child;
+                _childStates[i] = child;
             }
             
             childStates.Clear();
             
-            foreach (var child in m_childStates)
+            foreach (var child in _childStates)
             {
                 child.Initialize(context, hasTopState);
             }
@@ -426,12 +462,12 @@ namespace SeweralIdeas.StateMachines
 
         internal sealed override void Shutdown()
         {
-            foreach (var child in m_childStates)
+            foreach (var child in _childStates)
             {
                 child?.Shutdown();
             }
 
-            m_childStates = null;
+            _childStates = null;
             base.Shutdown();
         }
 
@@ -442,8 +478,8 @@ namespace SeweralIdeas.StateMachines
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    foreach (var child in m_childStates)
-                        child.DrawGUI(settings, isActive && child == m_activeSubState);
+                    foreach (var child in _childStates)
+                        child.DrawGUI(settings, isActive && child == _activeSubState);
                 }
             }
         }
@@ -463,9 +499,9 @@ namespace SeweralIdeas.StateMachines
             public IState rootState { get; set; }
         }
 
-        private OrthogonalBranch[] m_branches;
+        private OrthogonalBranch[] _branches;
 
-        public int ChildCount => m_branches.Length;
+        public int ChildCount => _branches.Length;
 
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
@@ -474,7 +510,7 @@ namespace SeweralIdeas.StateMachines
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    foreach (var child in m_branches)
+                    foreach (var child in _branches)
                         child.rootState.state.DrawGUI(settings, isActive);
                 }
             }
@@ -489,13 +525,13 @@ namespace SeweralIdeas.StateMachines
         internal sealed override void EnterEnd()
         {
             base.EnterEnd();
-            foreach (var subState in m_branches)
+            foreach (var subState in _branches)
                 subState.rootState.StateEnter();
         }
 
         internal sealed override void Exit()
         {
-            foreach (var subState in m_branches)
+            foreach (var subState in _branches)
                 subState.rootState.state.Exit();
             OnExit();
             base.Exit();
@@ -512,7 +548,7 @@ namespace SeweralIdeas.StateMachines
                 throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
             }
             
-            m_branches = new OrthogonalBranch[childStates.Count];
+            _branches = new OrthogonalBranch[childStates.Count];
 
             for (int i = 0; i < childStates.Count; ++i)
             {
@@ -527,12 +563,12 @@ namespace SeweralIdeas.StateMachines
                 childState.parentState = this;
                 var branch = new OrthogonalBranch();
                 branch.rootState = child;
-                m_branches[i] = branch;
+                _branches[i] = branch;
             }
             
             childStates.Clear();
 
-            foreach(var branch in m_branches)
+            foreach(var branch in _branches)
             {
                 branch.rootState.state.Initialize(context, branch);
             }
@@ -542,26 +578,26 @@ namespace SeweralIdeas.StateMachines
 
         internal sealed override void Shutdown()
         {
-            if (m_branches != null)
+            if (_branches != null)
             {
-                for (int i = 0; i < m_branches.Length; ++i)
+                for (int i = 0; i < _branches.Length; ++i)
                 {
-                    m_branches[i]?.topState?.Shutdown();
+                    _branches[i]?.topState?.Shutdown();
                 }
             }
 
-            m_branches = null;
+            _branches = null;
             base.Shutdown();
         }
 
         internal sealed override void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var anyBranchConsumed = false;
-            foreach (var branch in m_branches)
+            foreach (var branch in _branches)
             {
-                stateMachine.m_messageConsumed = false;
+                stateMachine._messageConsumed = false;
                 branch.topState.ReceiveMessage(handler);
-                anyBranchConsumed |= stateMachine.m_messageConsumed;
+                anyBranchConsumed |= stateMachine._messageConsumed;
             }
 
             if (!anyBranchConsumed)
@@ -571,11 +607,11 @@ namespace SeweralIdeas.StateMachines
         internal sealed override void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var anyBranchConsumed = false;
-            foreach (var branch in m_branches)
+            foreach (var branch in _branches)
             {
-                stateMachine.m_messageConsumed = false;
+                stateMachine._messageConsumed = false;
                 branch.topState.ReceiveMessage(handler, arg);
-                anyBranchConsumed |= stateMachine.m_messageConsumed;
+                anyBranchConsumed |= stateMachine._messageConsumed;
             }
 
             if (!anyBranchConsumed)

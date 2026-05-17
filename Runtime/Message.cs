@@ -44,6 +44,12 @@ namespace SeweralIdeas.StateMachines
 
         public Handler<TReceiver> handler { get; private set; }
         public override object GetHandler() => handler;
+
+        internal override void Reset()
+        {
+            handler = null;
+            base.Reset();
+        }
     }
 
     internal class Message<TReceiver, TArg> : Message where TReceiver : class
@@ -77,5 +83,12 @@ namespace SeweralIdeas.StateMachines
         public Handler<TReceiver, TArg> handler { get; private set; }
         public TArg arg0 { get; private set; }
         public override object GetHandler() => handler;
+
+        internal override void Reset()
+        {
+            handler = null;
+            arg0 = default;
+            base.Reset();
+        }
     }
 }

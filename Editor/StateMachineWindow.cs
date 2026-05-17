@@ -20,70 +20,70 @@ namespace SeweralIdeas.StateMachines.Editor
             }
         }
 
-        [SerializeField] private bool m_lockSelection = false;
-        [SerializeField] private GameObject m_selectedGameObject;
-        [SerializeField] private FieldRecord m_selectedField;
-        [SerializeField] private StateMachine.GUISettings m_guiSettings = new StateMachine.GUISettings();
+        [SerializeField] private bool _lockSelection = false;
+        [SerializeField] private GameObject _selectedGameObject;
+        [SerializeField] private FieldRecord _selectedField;
+        [SerializeField] private StateMachine.GUISettings _guiSettings = new StateMachine.GUISettings();
         
-        [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> m_machines = new List<(FieldRecord record, MachineGetter getter)>();
-        [System.NonSerialized] private GUIContent[] m_machineOptions = System.Array.Empty<GUIContent>();
+        [System.NonSerialized] private List<(FieldRecord record, MachineGetter getter)> _machines = new List<(FieldRecord record, MachineGetter getter)>();
+        [System.NonSerialized] private GUIContent[] _machineOptions = System.Array.Empty<GUIContent>();
 
         private delegate object MachineGetter(object obj);
-        private GameObject m_scannedGameObject;
-        private StateMachine m_selectedMachine;
-        private int m_selectedMachineIndex;
-        private bool m_showSettings;
+        private GameObject _scannedGameObject;
+        private StateMachine _selectedMachine;
+        private int _selectedMachineIndex;
+        private bool _showSettings;
 
-        private GUIStyle m_toolbarButtonStyle;
+        private GUIStyle _toolbarButtonStyle;
 
         [MenuItem("Window/Analysis/StateMachine Debugger")]
         static void Init()
         {
             var window = CreateWindow<StateMachineWindow>("StateMachine");
-            window.m_guiSettings = new StateMachine.GUISettings() { stateColor_active = Color.yellow, stateColor_normal = Color.gray };
+            window._guiSettings = new StateMachine.GUISettings() { stateColor_active = Color.yellow, stateColor_normal = Color.gray };
             window.Show();
         }
         
         private void OnGUI()
         {
-            m_toolbarButtonStyle ??= "toolbarbutton";
+            _toolbarButtonStyle ??= "toolbarbutton";
                 
             using (new GUILayout.HorizontalScope("Toolbar"))
             {
-                m_selectedMachineIndex = EditorGUILayout.Popup(m_selectedMachineIndex, m_machineOptions, GUILayout.Width(200));
+                _selectedMachineIndex = EditorGUILayout.Popup(_selectedMachineIndex, _machineOptions, GUILayout.Width(200));
                 
-                m_showSettings = GUILayout.Toggle(m_showSettings, "Settings", m_toolbarButtonStyle);
+                _showSettings = GUILayout.Toggle(_showSettings, "Settings", _toolbarButtonStyle);
                 EditorGUI.BeginChangeCheck();
-                m_lockSelection = GUILayout.Toggle(m_lockSelection, "Lock", m_toolbarButtonStyle);
+                _lockSelection = GUILayout.Toggle(_lockSelection, "Lock", _toolbarButtonStyle);
                 if (EditorGUI.EndChangeCheck())
                     RefreshSelectedGameobject();
                 GUILayout.FlexibleSpace();
             }
 
-            if (m_showSettings)
+            if (_showSettings)
             {
                 GUILayout.BeginVertical("Settings", GUI.skin.box);
-                m_guiSettings.fieldsMode = (StateMachine.GUISettings.FieldsMode)EditorGUILayout.EnumPopup("show fields", m_guiSettings.fieldsMode);
-                m_guiSettings.stateColor_normal = EditorGUILayout.ColorField("normal color", m_guiSettings.stateColor_normal);
-                m_guiSettings.stateColor_active = EditorGUILayout.ColorField("active color", m_guiSettings.stateColor_active);
+                _guiSettings.fieldsMode = (StateMachine.GUISettings.FieldsMode)EditorGUILayout.EnumPopup("show fields", _guiSettings.fieldsMode);
+                _guiSettings.stateColor_normal = EditorGUILayout.ColorField("normal color", _guiSettings.stateColor_normal);
+                _guiSettings.stateColor_active = EditorGUILayout.ColorField("active color", _guiSettings.stateColor_active);
                 GUILayout.EndVertical();
             }
 
-            if (m_selectedMachineIndex >= 0 && m_selectedMachineIndex < m_machines.Count)
+            if (_selectedMachineIndex >= 0 && _selectedMachineIndex < _machines.Count)
             {
-                var item = m_machines[m_selectedMachineIndex];
-                m_selectedMachine = (StateMachine)item.getter.Invoke(item.record.obj);
-                m_selectedField = item.record;
+                var item = _machines[_selectedMachineIndex];
+                _selectedMachine = (StateMachine)item.getter.Invoke(item.record.obj);
+                _selectedField = item.record;
             }
             else
             {
-                m_selectedMachine = null;
-                m_selectedField = default;
+                _selectedMachine = null;
+                _selectedField = default;
             }
 
-            if (m_selectedMachine != null)
+            if (_selectedMachine != null)
             {
-                m_selectedMachine.OnGUI(m_guiSettings);
+                _selectedMachine.OnGUI(_guiSettings);
                 Repaint();
             }
         }
@@ -96,18 +96,18 @@ namespace SeweralIdeas.StateMachines.Editor
 
         private void RefreshSelectedGameobject()
         {
-            if (!m_lockSelection && Selection.activeGameObject)
-                m_selectedGameObject = Selection.activeGameObject;
+            if (!_lockSelection && Selection.activeGameObject)
+                _selectedGameObject = Selection.activeGameObject;
 
-            if (m_scannedGameObject == m_selectedGameObject) return;
+            if (_scannedGameObject == _selectedGameObject) return;
 
-            m_machines.Clear();
-            m_machineOptions = System.Array.Empty<GUIContent>();
+            _machines.Clear();
+            _machineOptions = System.Array.Empty<GUIContent>();
             
-            if (m_selectedGameObject == null)
+            if (_selectedGameObject == null)
                 return;
 
-            var scripts = m_selectedGameObject.GetComponents<MonoBehaviour>();
+            var scripts = _selectedGameObject.GetComponents<MonoBehaviour>();
             foreach (var script in scripts)
             {
                 FindStateMachines(script);
@@ -149,8 +149,8 @@ namespace SeweralIdeas.StateMachines.Editor
                         {
                             var name = member.Name;
                             var record = new FieldRecord() { obj = obj, fieldName = name };
-                            m_machines.Add(new System.ValueTuple<FieldRecord, MachineGetter>(record, machineGetter));
-                            //m_machineOptions.Add(new GUIContent(record.ToString()));
+                            _machines.Add(new System.ValueTuple<FieldRecord, MachineGetter>(record, machineGetter));
+                            //_machineOptions.Add(new GUIContent(record.ToString()));
                         }
 
                         else if (member.GetCustomAttribute<HasStateMachine>() != null)
@@ -163,10 +163,10 @@ namespace SeweralIdeas.StateMachines.Editor
                 type = type.BaseType;
             }
 
-            m_machineOptions = new GUIContent[m_machines.Count];
-            for (int i = 0; i < m_machineOptions.Length; ++i)
+            _machineOptions = new GUIContent[_machines.Count];
+            for (int i = 0; i < _machineOptions.Length; ++i)
             {
-                m_machineOptions[i] = new GUIContent(m_machines[i].record.ToString());
+                _machineOptions[i] = new GUIContent(_machines[i].record.ToString());
             }
         }
 
