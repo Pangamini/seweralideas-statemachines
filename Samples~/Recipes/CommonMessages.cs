@@ -17,16 +17,16 @@ namespace SeweralIdeas.StateMachines.Recipes
         public interface ITick   : IStateBase { void Tick(float deltaTime); }
         public interface IUpdate : IStateBase { void Update(float deltaTime); }
 
-        public static readonly Handler<ITick, float> msg_tick = (h, dt) =>
+        public static readonly Handler<ITick, float> msg_tick = (receiver, dt) =>
         {
-            h.Tick(dt);
-            h.state.PropagateMessage();
+            receiver.Tick(dt);
+            receiver.state.PropagateMessage();
         };
 
-        public static readonly Handler<IUpdate, float> msg_update = (h, dt) =>
+        public static readonly Handler<IUpdate, float> msg_update = (receiver, dt) =>
         {
-            h.Update(dt);
-            h.state.PropagateMessage();
+            receiver.Update(dt);
+            receiver.state.PropagateMessage();
         };
     }
 }

@@ -24,7 +24,8 @@ public class Game
     interface ITick : IStateBase { void Tick(float dt); }
 
     // 2. Wrap each dispatch in a static Handler delegate.
-    static readonly Handler<ITick, float> msg_tick = (h, dt) => h.Tick(dt);
+    // The first parameter is the receiver (the state implementing ITick).
+    static readonly Handler<ITick, float> msg_tick = (receiver, dt) => receiver.Tick(dt);
 
     readonly StateMachine _machine = new("Game", new State_Root());
 
@@ -103,7 +104,7 @@ using SeweralIdeas.StateMachines;
 public class TrafficLight
 {
     interface ITick : IStateBase { void Tick(float dt); }
-    static readonly Handler<ITick, float> msg_tick = (h, dt) => h.Tick(dt);
+    static readonly Handler<ITick, float> msg_tick = (receiver, dt) => receiver.Tick(dt);
 
     readonly StateMachine _machine;
 
@@ -167,7 +168,7 @@ A real traffic light can be powered off. Wrap the cycle in a higher-level state.
 
 ```csharp
 interface IPowerSwitch : IStateBase { void SetPower(bool on); }
-static readonly Handler<IPowerSwitch, bool> msg_power = (h, on) => h.SetPower(on);
+static readonly Handler<IPowerSwitch, bool> msg_power = (receiver, on) => receiver.SetPower(on);
 
 class State_VehicleLight : HierarchicalState<TrafficLight>, IState, IPowerSwitch
 {
@@ -263,7 +264,7 @@ Pedestrians press a button to request a faster cycle. Define the message:
 
 ```csharp
 interface IPedestrianButton : IStateBase { void OnPress(); }
-static readonly Handler<IPedestrianButton> msg_press = h => h.OnPress();
+static readonly Handler<IPedestrianButton> msg_press = receiver => receiver.OnPress();
 
 public void PressButton() => _machine.SendMessage(msg_press);
 ```
@@ -320,7 +321,7 @@ Define the emergency message and route it through `State_Operating`:
 
 ```csharp
 interface IEmergency : IStateBase { void OnEmergency(); }
-static readonly Handler<IEmergency> msg_emergency = h => h.OnEmergency();
+static readonly Handler<IEmergency> msg_emergency = receiver => receiver.OnEmergency();
 
 class State_Operating : HierarchicalState<TrafficLight, State_VehicleLight>, IState, IEmergency
 {
@@ -356,19 +357,21 @@ public static class CommonMessages
     public interface ITick   : IStateBase { void Tick(float dt); }
     public interface IUpdate : IStateBase { void Update(float dt); }
 
-    public static readonly Handler<ITick, float> msg_tick = (h, dt) =>
+    public static readonly Handler<ITick, float> msg_tick = (receiver, dt) =>
     {
-        h.Tick(dt);
-        h.state.PropagateMessage();   // ticks broadcast by default
+        receiver.Tick(dt);
+        receiver.state.PropagateMessage();   // ticks broadcast by default
     };
 
-    public static readonly Handler<IUpdate, float> msg_update = (h, dt) =>
+    public static readonly Handler<IUpdate, float> msg_update = (receiver, dt) =>
     {
-        h.Update(dt);
-        h.state.PropagateMessage();
+        receiver.Update(dt);
+        receiver.state.PropagateMessage();
     };
 }
 ```
+
+> **Naming note**: the lambda's first parameter is the *receiver* of the dispatch — the state instance that implements the receiver interface (`ITick`, `IUpdate`, etc.). The `Handler<>` delegate itself is the dispatch shim. Calling the parameter `receiver` avoids the overload with the type name `Handler`.
 
 Then `using static CommonMessages;` in every state file. The handlers call `PropagateMessage()` from the *handler side*, so ticks broadcast to every state that implements `ITick` rather than stopping at the first one — which is usually what you want for periodic work.
 
@@ -382,8 +385,8 @@ public interface ICancelWait : IStateBase { void Cancel(); }
 
 public static class WaitMessages
 {
-    public static readonly Handler<IExtendWait, float> msg_extendWait = (h, s) => h.Extend(s);
-    public static readonly Handler<ICancelWait>        msg_cancelWait = h => h.Cancel();
+    public static readonly Handler<IExtendWait, float> msg_extendWait = (receiver, seconds) => receiver.Extend(seconds);
+    public static readonly Handler<ICancelWait>        msg_cancelWait = receiver => receiver.Cancel();
 }
 
 public abstract class State_Wait<TActor, TParent>
@@ -477,7 +480,7 @@ Different objects can own their own state machines. They talk to each other thro
 public class GameController
 {
     interface IGoToScene { void GoToScene(string name); }
-    static readonly Handler<IGoToScene, string> msg_go = (h, n) => h.GoToScene(n);
+    static readonly Handler<IGoToScene, string> msg_go = (receiver, name) => receiver.GoToScene(name);
     readonly StateMachine _machine = new("GameController", new State_Root());
 
     public void GoToScene(string name) => _machine.SendMessage(msg_go, name);
@@ -556,7 +559,7 @@ Subscribe in `OnEnter` and forward the callback as a message. This keeps the hea
 class State_Root : HierarchicalState<Controller>, IState, IGameStateChanged
 {
     static readonly Handler<IGameStateChanged, World.State> msg_gameStateChanged =
-        (h, s) => h.OnGameStateChanged(s);
+        (receiver, newState) => receiver.OnGameStateChanged(newState);
 
     protected override void OnEnter()
     {
@@ -642,7 +645,7 @@ Define a receiver interface and a `Handler` delegate:
 
 ```csharp
 public interface IHit { void OnHit(int damage); }
-static readonly Handler<IHit, int> msg_hit = (h, dmg) => h.OnHit(dmg);
+static readonly Handler<IHit, int> msg_hit = (receiver, dmg) => receiver.OnHit(dmg);
 ```
 
 Send a message:
@@ -739,7 +742,7 @@ using SeweralIdeas.StateMachines;
 class NetworkBridge
 {
     interface IPacket { void OnPacket(byte[] data); }
-    static readonly Handler<IPacket, byte[]> msg_packet = (h, b) => h.OnPacket(b);
+    static readonly Handler<IPacket, byte[]> msg_packet = (receiver, data) => receiver.OnPacket(data);
 
     readonly ManualResetEventSlim _wake = new(false);
     readonly ConcurrentStateMachine _machine;
