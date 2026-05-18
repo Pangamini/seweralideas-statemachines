@@ -110,14 +110,14 @@ public class TrafficLight
 
     public TrafficLight()
     {
-        _machine = new StateMachine("TrafficLight", new State_VehicleLight());
+        _machine = new StateMachine("TrafficLight", new State_Root());
     }
 
     public void Start()        => _machine.Initialize(this);
     public void Stop()         => _machine.Shutdown();
     public void Tick(float dt) => _machine.SendMessage(msg_tick, dt);
 
-    class State_VehicleLight : HierarchicalState<TrafficLight>, IState
+    class State_Root : HierarchicalState<TrafficLight>, IState
     {
         public readonly State_Red    Red    = new();
         public readonly State_Green  Green  = new();
@@ -132,7 +132,7 @@ public class TrafficLight
         }
     }
 
-    abstract class State_Timed : SimpleState<TrafficLight, State_VehicleLight>, IState, ITick
+    abstract class State_Timed : SimpleState<TrafficLight, State_Root>, IState, ITick
     {
         protected float _timeLeft;
         protected abstract float  Duration  { get; }
@@ -157,8 +157,8 @@ public class TrafficLight
 Five things to notice:
 
 - `State_Timed` is an **abstract reusable state**. It implements `ITick` once; the three concrete colors only differ in duration and next state. This kind of composition is the main reason every state class is generic over `TActor` and `TParent`.
-- Leaves reach siblings as `parent.Green`, `parent.Yellow`, etc. The `parent` property is typed `State_VehicleLight` because of the `SimpleState<TrafficLight, State_VehicleLight>` declaration.
-- `TransitTo(NextState)` bubbles up to `State_VehicleLight`, which finds the target in its children list and switches.
+- Leaves reach siblings as `parent.Green`, `parent.Yellow`, etc. The `parent` property is typed `State_Root` because of the `SimpleState<TrafficLight, State_Root>` declaration.
+- `TransitTo(NextState)` bubbles up to `State_Root`, which finds the target in its children list and switches.
 - `Tick` is implemented once on `State_Timed`. Each color inherits the behavior — no per-color duplication.
 - `Initialize(this)` sets the actor, so anywhere inside a state `actor.SomeMethod()` calls the owning `TrafficLight`.
 
@@ -170,7 +170,7 @@ A real traffic light can be powered off. Wrap the cycle in a higher-level state.
 interface IPowerSwitch : IStateBase { void SetPower(bool on); }
 static readonly Handler<IPowerSwitch, bool> msg_power = (receiver, on) => receiver.SetPower(on);
 
-class State_VehicleLight : HierarchicalState<TrafficLight>, IState, IPowerSwitch
+class State_Root : HierarchicalState<TrafficLight>, IState, IPowerSwitch
 {
     public readonly State_Off       Off       = new();
     public readonly State_Operating Operating = new();
@@ -185,12 +185,12 @@ class State_VehicleLight : HierarchicalState<TrafficLight>, IState, IPowerSwitch
     void IPowerSwitch.SetPower(bool on) => TransitTo(on ? (IState)Operating : Off);
 }
 
-class State_Off : SimpleState<TrafficLight, State_VehicleLight>, IState
+class State_Off : SimpleState<TrafficLight, State_Root>, IState
 {
     void IState.Enter() { /* darken bulbs */ }
 }
 
-class State_Operating : HierarchicalState<TrafficLight, State_VehicleLight>, IState
+class State_Operating : HierarchicalState<TrafficLight, State_Root>, IState
 {
     public readonly State_Red    Red    = new();
     public readonly State_Green  Green  = new();
@@ -206,7 +206,7 @@ class State_Operating : HierarchicalState<TrafficLight, State_VehicleLight>, ISt
 }
 ```
 
-The colors (`State_Red` / `State_Green` / `State_Yellow`) now live under `State_Operating`. Their declared parent therefore changes from `State_VehicleLight` to `State_Operating`:
+The colors (`State_Red` / `State_Green` / `State_Yellow`) now live under `State_Operating`. Their declared parent therefore changes from `State_Root` to `State_Operating`:
 
 ```csharp
 abstract class State_Timed : SimpleState<TrafficLight, State_Operating>, IState, ITick { ... }
@@ -215,7 +215,7 @@ abstract class State_Timed : SimpleState<TrafficLight, State_Operating>, IState,
 The structure now looks like:
 
 ```
-State_VehicleLight   (Hierarchical)
+State_Root   (Hierarchical)
 ├── State_Off            (Simple)
 └── State_Operating  (Hierarchical)
     ├── State_Red        (Simple)
@@ -223,7 +223,7 @@ State_VehicleLight   (Hierarchical)
     └── State_Yellow     (Simple)
 ```
 
-`msg_power` with `on = false` bubbles from whichever color is active, past `State_Operating` (which doesn't implement `IPowerSwitch`), up to `State_VehicleLight`, which transitions to `Off`. Exiting `Operating` automatically exits whichever color was active first.
+`msg_power` with `on = false` bubbles from whichever color is active, past `State_Operating` (which doesn't implement `IPowerSwitch`), up to `State_Root`, which transitions to `Off`. Exiting `Operating` automatically exits whichever color was active first.
 
 ### Step 3 — a pedestrian light in parallel
 
@@ -232,7 +232,7 @@ A pedestrian crossing has its own light that runs *alongside* the vehicle light,
 ```csharp
 class State_Crossing : OrthogonalState<TrafficLight>, IState
 {
-    public readonly State_VehicleLight    Vehicles    = new();
+    public readonly State_Root    Vehicles    = new();
     public readonly State_PedestrianLight Pedestrians = new();
 
     protected override void OnInitialize(List<IState> subStates)
@@ -323,7 +323,7 @@ Define the emergency message and route it through `State_Operating`:
 interface IEmergency : IStateBase { void OnEmergency(); }
 static readonly Handler<IEmergency> msg_emergency = receiver => receiver.OnEmergency();
 
-class State_Operating : HierarchicalState<TrafficLight, State_VehicleLight>, IState, IEmergency
+class State_Operating : HierarchicalState<TrafficLight, State_Root>, IState, IEmergency
 {
     public readonly State_Red    Red    = new();
     public readonly State_Green  Green  = new();
@@ -371,8 +371,6 @@ public static class CommonMessages
 }
 ```
 
-> **Naming note**: the lambda's first parameter is the *receiver* of the dispatch — the state instance that implements the receiver interface (`ITick`, `IUpdate`, etc.). The `Handler<>` delegate itself is the dispatch shim. Calling the parameter `receiver` avoids the overload with the type name `Handler`.
-
 Then `using static CommonMessages;` in every state file. The handlers call `PropagateMessage()` from the *handler side*, so ticks broadcast to every state that implements `ITick` rather than stopping at the first one — which is usually what you want for periodic work.
 
 ### Tick-down state with extension, cancellation, and message handling
@@ -380,17 +378,8 @@ Then `using static CommonMessages;` in every state file. The handlers call `Prop
 A timer that just transitions when it runs out is a five-line state. A *real* timer state has more responsibilities: an entry-time arg sets the duration; other messages extend or shorten it; a cancel message stops it early; subclasses may need to react to additional messages while it's running. Express it once as a reusable abstract state, building on `CommonMessages.ITick` from the previous recipe:
 
 ```csharp
-public interface IExtendWait : IStateBase { void Extend(float seconds); }
-public interface ICancelWait : IStateBase { void Cancel(); }
-
-public static class WaitMessages
-{
-    public static readonly Handler<IExtendWait, float> msg_extendWait = (receiver, seconds) => receiver.Extend(seconds);
-    public static readonly Handler<ICancelWait>        msg_cancelWait = receiver => receiver.Cancel();
-}
-
 public abstract class State_Wait<TActor, TParent>
-    : SimpleState<TActor, TParent>, IState<float>, ITick, IExtendWait, ICancelWait
+    : SimpleState<TActor, TParent>, IState<float>, ITick
     where TActor  : class
     where TParent : IParentState
 {
@@ -398,18 +387,17 @@ public abstract class State_Wait<TActor, TParent>
 
     void IState<float>.Enter(float seconds) => _timeLeft = seconds;
 
-    void IExtendWait.Extend(float seconds)  => _timeLeft += seconds;
-    void ICancelWait.Cancel()               => OnCancelled();
-
     void ITick.Tick(float dt)
     {
         _timeLeft -= dt;
         if (_timeLeft <= 0f)
+        {
+            _timeLeft = float.PositiveInfinity;
             OnElapsed();
+        }
     }
 
     protected abstract void OnElapsed();
-    protected virtual  void OnCancelled() => OnElapsed();   // default: same outcome as natural elapse
 }
 ```
 
@@ -419,14 +407,10 @@ Concrete use — one line per behavior, all the timer mechanics inherited:
 class State_Reloading : State_Wait<Player, State_Combat>
 {
     protected override void OnElapsed()   => TransitTo(parent.Idle);
-    protected override void OnCancelled() => TransitTo(parent.Idle);
 }
 
 // Enter it with a duration:
 TransitTo(parent.Reloading, 2.5f);
-
-// Extend it from anywhere in the same machine:
-machine.SendMessage(WaitMessages.msg_extendWait, 0.5f);
 ```
 
 A subclass can also add its own receiver interfaces — `State_Reloading` could implement `IOnHit` to abort early — and the timer behavior keeps working underneath. The library ships no built-in wait state because it has no time concept: every project's tick source and clock are different. The 25 lines above transplant cleanly into any of them.
