@@ -22,11 +22,11 @@ public class DoorAndLeverExample : MonoBehaviour
     private interface IOnClickButton { void OnClickButton(); }
     private interface ISetDoorDestination { void SetDoorDestination(bool shouldOpen); }
 
-    private static readonly Handler<IUpdate, float> msg_update = (handler, deltaTime) => handler.Update(deltaTime);
-    private static readonly Handler<IDontHandleThis> msg_dontHandleThis = (handler) => handler.Unhandled();
-    private static readonly Handler<IOnClickLever> msg_onClickLever = handler => handler.OnClickLever();
-    private static readonly Handler<IOnClickButton> msg_onClickButton = handler => handler.OnClickButton();
-    private static readonly Handler<ISetDoorDestination, bool> msg_setDoorDestination = (handler, shouldOpen) => handler.SetDoorDestination(shouldOpen);
+    private static readonly Handler<IUpdate, float> msg_update = (receiver, deltaTime) => receiver.Update(deltaTime);
+    private static readonly Handler<IDontHandleThis> msg_dontHandleThis = receiver => receiver.Unhandled();
+    private static readonly Handler<IOnClickLever> msg_onClickLever = receiver => receiver.OnClickLever();
+    private static readonly Handler<IOnClickButton> msg_onClickButton = receiver => receiver.OnClickButton();
+    private static readonly Handler<ISetDoorDestination, bool> msg_setDoorDestination = (receiver, shouldOpen) => receiver.SetDoorDestination(shouldOpen);
 
     private float _doorPosition;
 

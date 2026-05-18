@@ -217,17 +217,17 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        private static readonly Handler<ITransition, IState> MsgTransition = (handler, dest) =>
+        private static readonly Handler<ITransition, IState> MsgTransition = (receiver, dest) =>
         {
-            handler.TransitTo(dest);
+            receiver.TransitTo(dest);
         };
 
         private static class TransitionHandler<TArg>
         {
             public static readonly Handler<ITransition, (IState<TArg>, TArg)> MsgTransition =
-                (ITransition handler, (IState<TArg> destination, TArg _arg) args) =>
+                (ITransition receiver, (IState<TArg> destination, TArg _arg) args) =>
                 {
-                    handler.TransitTo(args.destination, args._arg);
+                    receiver.TransitTo(args.destination, args._arg);
                 };
         }
 

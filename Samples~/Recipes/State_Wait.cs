@@ -11,8 +11,8 @@ namespace SeweralIdeas.StateMachines.Recipes
 
     public static class WaitMessages
     {
-        public static readonly Handler<IExtendWait, float> msg_extendWait = (h, s) => h.Extend(s);
-        public static readonly Handler<ICancelWait>        msg_cancelWait = h => h.Cancel();
+        public static readonly Handler<IExtendWait, float> msg_extendWait = (receiver, seconds) => receiver.Extend(seconds);
+        public static readonly Handler<ICancelWait>        msg_cancelWait = receiver => receiver.Cancel();
     }
 
     /// <summary>
