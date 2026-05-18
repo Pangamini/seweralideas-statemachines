@@ -7,15 +7,15 @@ namespace SeweralIdeas.StateMachines
 {
     public static class ReceiverTypeNameCache
     {
-        private static readonly ConcurrentDictionary<Type, string> s_cache = new();
+        private static readonly ConcurrentDictionary<Type, string> Cache = new();
 
         public static string GetName(Type type)
         {
-            if(s_cache.TryGetValue(type, out string? name))
+            if(Cache.TryGetValue(type, out string? name))
                 return name;
 
             name = type.Name;
-            s_cache.TryAdd(type, name);
+            Cache.TryAdd(type, name);
             return name;
         }
     }

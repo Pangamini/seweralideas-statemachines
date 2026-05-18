@@ -12,12 +12,9 @@ public class DoorAndLeverExample : MonoBehaviour
     [SerializeField] private Button _leverSwitch;
     [SerializeField] private GameObject _leverIconOn;
     [SerializeField] private GameObject _leverIconOff;
-    
-    [Header("GUI")]
-    [SerializeField] private RectTransform _guiRect;
-    
-    [SerializeField] private StateMachine.GUISettings _guiSettings;
+
     private StateMachine _stateMachine;
+    private readonly InGameStateMachineOverlay _overlay = new();
 
     private interface IDontHandleThis { void Unhandled(); }
     private interface IUpdate { void Update(float deltaTime); }
@@ -197,7 +194,6 @@ public class DoorAndLeverExample : MonoBehaviour
                 private IState _transitTo;
                 private float _targetPositiom;
 
-                [ShowField]
                 protected float _speed;
                 protected State_DoorMoving(float targetPositiom, IState transitTo)
                 {
@@ -254,9 +250,9 @@ public class DoorAndLeverExample : MonoBehaviour
 
     private void OnGUI()
     {
-        Rect rect = new Rect(32, Screen.height * 0.5f, Screen.width - 64, Screen.height * 0.5f - 32);
+        var rect = new Rect(32, Screen.height * 0.5f, Screen.width - 64, Screen.height * 0.5f - 32);
         GUILayout.BeginArea(rect);
-        _stateMachine.OnGUI(_guiSettings);
+        _overlay.Draw(_stateMachine);
         GUILayout.EndArea();
     }
 }

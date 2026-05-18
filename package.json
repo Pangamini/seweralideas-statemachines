@@ -12,8 +12,13 @@
   "samples": [
     {
       "displayName": "Door and Lever",
-      "description": "Contains a sample StateMachine with orthogonal and hierarchical states",
+      "description": "Contains a sample StateMachine with orthogonal and hierarchical states. Also includes a reusable in-game IMGUI overlay built on IStateVisitor.",
       "path": "Samples~/DoorAndLever"
+    },
+    {
+      "displayName": "Recipes",
+      "description": "Reusable patterns: CommonMessages (shared ITick/IUpdate) and State_Wait (timer state with extend/cancel)",
+      "path": "Samples~/Recipes"
     }
   ]
 }
