@@ -1,4 +1,6 @@
-﻿#if UNITY_5_3_OR_NEWER
+﻿#nullable enable
+
+#if UNITY_5_3_OR_NEWER
 #define UNITY
 #if DEBUG
 #define UNITY_PROFILING
@@ -104,7 +106,8 @@ namespace SeweralIdeas.StateMachines
         }
 
         private static readonly GUILayoutOption[] s_expandHeightOptions = {GUILayout.ExpandHeight(true)};
-        
+
+#pragma warning disable CS8618 // fields populated via object-initializer in StateGUI(); slated for removal in the visitor-API refactor
         protected struct StateGUIScope : IDisposable
         {
             public State state;
@@ -137,6 +140,7 @@ namespace SeweralIdeas.StateMachines
                 GUILayout.EndVertical();
             }
         }
+#pragma warning restore CS8618
 #endif
 
         internal abstract IParentState parentState { get; set; }
@@ -217,9 +221,9 @@ namespace SeweralIdeas.StateMachines
         internal virtual void Shutdown()
         {
             OnShutdown();
-            _hasTopState = null;
-            stateMachine = null;
-            parentState = null;
+            _hasTopState = null!;
+            stateMachine = null!;
+            parentState = null!;
         }
 
         protected virtual void OnShutdown() { }
@@ -258,10 +262,10 @@ namespace SeweralIdeas.StateMachines
         protected virtual void OnEnter() { }
         protected virtual void OnExit() { }
 
-        public StateMachine stateMachine { get; private set; }
-        private IHasTopState _hasTopState;
+        public StateMachine stateMachine { get; private set; } = null!;
+        private IHasTopState _hasTopState = null!;
 
-        public static implicit operator bool(State state)
+        public static implicit operator bool(State? state)
         {
             return state != null;
         }
@@ -274,7 +278,7 @@ namespace SeweralIdeas.StateMachines
 
     public abstract class State<TActor, TParent> : State where TParent : IParentState where TActor : class
     {
-        private TActor _actor;
+        private TActor _actor = null!;
         public TActor actor
         {
             get
@@ -288,9 +292,10 @@ namespace SeweralIdeas.StateMachines
         [System.Diagnostics.Conditional("DEBUG")]
         private void AssertInitialized()
         {
-            if (stateMachine == null)
+            if (((object?)stateMachine) is null)
                 throw new InvalidOperationException(
-                    $"Cannot access actor on state {GetType().Name} before StateMachine.Initialize. " +
+                    $"Cannot access actor on state {GetType().Name}: state machine is not initialized " +
+                    "(either Initialize has not been called, or Shutdown has run). " +
                     "States must not access actor from their constructors — use OnInitialize instead.");
         }
 
@@ -300,18 +305,18 @@ namespace SeweralIdeas.StateMachines
 
         internal override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
-            actor = context.stateMachine.actor as TActor;
+            actor = (context.stateMachine.actor as TActor)!;
             base.Initialize(context, hasTopState);
         }
 
 
-        private TParent _parent;
+        private TParent _parent = default!;
         public TParent parent => _parent;
 
         internal override IParentState parentState
         {
             get => _parent;
-            set => _parent = (TParent)value;
+            set => _parent = (TParent)value!;
         }
     }
 
@@ -366,10 +371,10 @@ namespace SeweralIdeas.StateMachines
 
     public abstract class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
     {
-        private State _activeSubState;
-        private IState _entrySubState;
+        private State? _activeSubState;
+        private IState? _entrySubState;
 
-        private State[] _childStates;
+        private State[] _childStates = null!;
 
         public int ChildCount => _childStates.Length;
         public State GetChild(int index) => _childStates[index];
@@ -424,23 +429,24 @@ namespace SeweralIdeas.StateMachines
             var childStates = context.iBaseStates;
             OnInitialize(out _entrySubState, childStates);
 
-            if (childStates.IndexOf(null) != -1)
+            foreach (var s in childStates)
             {
-                throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
+                if (s is null)
+                    throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
             }
-            
+
             bool addEntrySubState = _entrySubState != null && !childStates.Contains(_entrySubState);
             if (addEntrySubState)
             {
-                childStates.Add(_entrySubState);
+                childStates.Add(_entrySubState!);
             }
-            
+
             _childStates = new State[childStates.Count];
-            
+
             for (int i = 0; i < childStates.Count; ++i)
             {
                 var child = childStates[i].state;
-                
+
                 if (child.parentState != null)
                 {
                     throw new StateMachine.InitializationException($"Cannot add state {child.GetType()} as a child of {GetType()}. already has a parent");
@@ -449,16 +455,23 @@ namespace SeweralIdeas.StateMachines
                 child.parentState = this;
                 _childStates[i] = child;
             }
-            
+
             childStates.Clear();
-            
+
             foreach (var child in _childStates)
             {
                 child.Initialize(context, hasTopState);
             }
         }
 
-        protected abstract void OnInitialize(out IState entrySubState, List<IStateBase> subStates);
+        /// <summary>
+        /// Declare this hierarchical state's child states.
+        /// </summary>
+        /// <param name="entrySubState">The child to enter by default. Set to <c>null</c> to
+        /// defer the entry decision to runtime, then call <c>TransitTo(...)</c> from inside
+        /// <see cref="IState.Enter"/> to pick a child based on context.</param>
+        /// <param name="subStates">Add every child state to this list.</param>
+        protected abstract void OnInitialize(out IState? entrySubState, List<IStateBase> subStates);
 
         internal sealed override void Shutdown()
         {
@@ -467,7 +480,7 @@ namespace SeweralIdeas.StateMachines
                 child?.Shutdown();
             }
 
-            _childStates = null;
+            _childStates = null!;
             base.Shutdown();
         }
 
@@ -495,11 +508,11 @@ namespace SeweralIdeas.StateMachines
     {
         private class OrthogonalBranch : IHasTopState
         {
-            public State topState { get; set; }
-            public IState rootState { get; set; }
+            public State? topState { get; set; }
+            public IState rootState { get; set; } = null!;
         }
 
-        private OrthogonalBranch[] _branches;
+        private OrthogonalBranch[] _branches = null!;
 
         public int ChildCount => _branches.Length;
 
@@ -542,30 +555,30 @@ namespace SeweralIdeas.StateMachines
             base.Initialize(context, hasTopState);
             var childStates = context.iStates;
             OnInitialize(childStates);
-            
-            if (childStates.IndexOf(null) != -1)
+
+            foreach (var s in childStates)
             {
-                throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
+                if (s is null)
+                    throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
             }
-            
+
             _branches = new OrthogonalBranch[childStates.Count];
 
             for (int i = 0; i < childStates.Count; ++i)
             {
                 var child = childStates[i];
                 var childState = child.state;
-                
+
                 if (childState.parentState != null)
                 {
                     throw new StateMachine.InitializationException("State already has a parent");
                 }
-                
+
                 childState.parentState = this;
-                var branch = new OrthogonalBranch();
-                branch.rootState = child;
+                var branch = new OrthogonalBranch { rootState = child };
                 _branches[i] = branch;
             }
-            
+
             childStates.Clear();
 
             foreach(var branch in _branches)
@@ -574,6 +587,10 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
+        /// <summary>
+        /// Declare this orthogonal state's parallel child branches. All listed children run
+        /// at the same time, each with its own active-state pointer.
+        /// </summary>
         protected abstract void OnInitialize(List<IState> subStates);
 
         internal sealed override void Shutdown()
@@ -586,7 +603,7 @@ namespace SeweralIdeas.StateMachines
                 }
             }
 
-            _branches = null;
+            _branches = null!;
             base.Shutdown();
         }
 
@@ -596,7 +613,7 @@ namespace SeweralIdeas.StateMachines
             foreach (var branch in _branches)
             {
                 stateMachine._messageConsumed = false;
-                branch.topState.ReceiveMessage(handler);
+                branch.topState!.ReceiveMessage(handler);
                 anyBranchConsumed |= stateMachine._messageConsumed;
             }
 
@@ -610,7 +627,7 @@ namespace SeweralIdeas.StateMachines
             foreach (var branch in _branches)
             {
                 stateMachine._messageConsumed = false;
-                branch.topState.ReceiveMessage(handler, arg);
+                branch.topState!.ReceiveMessage(handler, arg);
                 anyBranchConsumed |= stateMachine._messageConsumed;
             }
 

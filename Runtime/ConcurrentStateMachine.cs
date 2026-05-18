@@ -1,4 +1,6 @@
-﻿using System;
+﻿#nullable enable
+
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 
@@ -7,13 +9,13 @@ namespace SeweralIdeas.StateMachines
     public class ConcurrentStateMachine
     {
         private readonly StateMachine _machine;
-        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
-        private readonly ConcurrentQueue<Message> _messageQueue = new ConcurrentQueue<Message>();
-        private readonly Action _onMessagesAvailable;
-        private int _hasMessages = 0;
+        private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.SupportsRecursion);
+        private readonly ConcurrentQueue<Message> _messageQueue = new();
+        private readonly Action? _onMessagesAvailable;
+        private int _hasMessages;
 
-        public ConcurrentStateMachine(string name, IState rootState, Action<string> debugLog,
-            Action onMessagesAvailable, StateMachine.LogFlags logFlags = StateMachine.LogFlags.None)
+        public ConcurrentStateMachine(string name, IState rootState, Action<string>? debugLog,
+            Action? onMessagesAvailable, StateMachine.LogFlags logFlags = StateMachine.LogFlags.None)
         {
             _lock.EnterWriteLock();
             try
@@ -96,7 +98,7 @@ namespace SeweralIdeas.StateMachines
                             break;
                     }
 
-                    if (!_messageQueue.TryDequeue(out Message msg))
+                    if (!_messageQueue.TryDequeue(out Message? msg))
                     {
                         // if there are no more messages in the queue, return false
                         return false;

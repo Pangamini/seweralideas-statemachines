@@ -1,4 +1,4 @@
-﻿using System;
+﻿#nullable enable
 
 namespace SeweralIdeas.StateMachines
 {
@@ -9,15 +9,13 @@ namespace SeweralIdeas.StateMachines
         public abstract object GetHandler();
 
         public abstract string ReceiverName { get; }
-        
-        internal virtual void Reset()
-        {
-        }
+
+        internal abstract void Reset();
     }
 
     internal class Message<TReceiver> : Message where TReceiver : class
     {
-        private static MessagePool<Message<TReceiver>> s_pool = new MessagePool<Message<TReceiver>>();
+        private static readonly MessagePool<Message<TReceiver>> s_pool = new();
         public static Message<TReceiver> Create(Handler<TReceiver> handler)
         {
             var message = s_pool.Take();
@@ -42,19 +40,20 @@ namespace SeweralIdeas.StateMachines
 
         public override string ReceiverName => typeof(TReceiver).Name;
 
-        public Handler<TReceiver> handler { get; private set; }
+        public Handler<TReceiver> handler { get; private set; } = null!;
         public override object GetHandler() => handler;
 
         internal override void Reset()
         {
-            handler = null;
-            base.Reset();
+            // intentionally cleared so the pooled instance does not root the captured delegate;
+            // the next Create call reassigns before any read
+            handler = null!;
         }
     }
 
     internal class Message<TReceiver, TArg> : Message where TReceiver : class
     {
-        private static MessagePool<Message<TReceiver, TArg>> s_pool = new MessagePool<Message<TReceiver, TArg>>();
+        private static readonly MessagePool<Message<TReceiver, TArg>> s_pool = new();
         public static Message<TReceiver, TArg> Create(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var message = s_pool.Take();
@@ -79,16 +78,17 @@ namespace SeweralIdeas.StateMachines
         }
 
         public override string ReceiverName => typeof(TReceiver).Name;
-        
-        public Handler<TReceiver, TArg> handler { get; private set; }
-        public TArg arg0 { get; private set; }
+
+        public Handler<TReceiver, TArg> handler { get; private set; } = null!;
+        public TArg arg0 { get; private set; } = default!;
         public override object GetHandler() => handler;
 
         internal override void Reset()
         {
-            handler = null;
-            arg0 = default;
-            base.Reset();
+            // intentionally cleared so the pooled instance does not root the captured delegate
+            // or arg reference; the next Create call reassigns both before any read
+            handler = null!;
+            arg0 = default!;
         }
     }
 }

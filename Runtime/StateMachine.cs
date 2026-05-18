@@ -1,4 +1,6 @@
-﻿#if UNITY_5_3_OR_NEWER
+﻿#nullable enable
+
+#if UNITY_5_3_OR_NEWER
 #define UNITY
 #if DEBUG
 #define UNITY_PROFILING
@@ -21,7 +23,7 @@ namespace SeweralIdeas.StateMachines
 {
     internal interface IHasTopState
     {
-        State topState { get; set; }
+        State? topState { get; set; }
         IState rootState { get; }
     }
 
@@ -41,24 +43,24 @@ namespace SeweralIdeas.StateMachines
             void TransitTo<TArg>(IState<TArg> state, TArg arg);
         }
 
-        public object actor { get; private set; }
+        public object? actor { get; private set; }
 
         private readonly IState _rootState;
         private readonly Action<string> _debugLog;
-        private readonly Queue<Message> _messageQueue = new Queue<Message>();
-        private readonly Queue<Message> _transitionQueue = new Queue<Message>();
-        
-        private State _topState;
+        private readonly Queue<Message> _messageQueue = new();
+        private readonly Queue<Message> _transitionQueue = new();
+
+        private State _topState = null!;
         private bool _receivingMessages;
 
         internal bool _messageConsumed;
         public LogFlags logFlags = 0;
         public readonly string Name;
 
-        State IHasTopState.topState
+        State? IHasTopState.topState
         {
             get => _topState;
-            set => _topState = value;
+            set => _topState = value!;
         }
 
         IState IHasTopState.rootState => _rootState;
@@ -79,7 +81,7 @@ namespace SeweralIdeas.StateMachines
             EnterExit = 1 << 0,
         }
 
-        public StateMachine(string name, IState rootState, Action<string> debugLog = null)
+        public StateMachine(string name, IState rootState, Action<string>? debugLog = null)
         {
             _debugLog = debugLog ?? Console.WriteLine;
             Name = name;
@@ -113,10 +115,10 @@ namespace SeweralIdeas.StateMachines
             }
             catch(Exception initializationException)
             {
-                Exception shutdownException = null;
+                Exception? shutdownException = null;
                 try
                 {
-                    _rootState?.state?.Shutdown();
+                    _rootState.state.Shutdown();
                 }
                 catch( Exception ex )
                 {
@@ -129,7 +131,7 @@ namespace SeweralIdeas.StateMachines
                     this.actor = null;
                     InitializationState = InitState.Offline;
                 }
-                
+
                 if (shutdownException != null)
                 {
                     throw new AggregateException("Initialization and shutdown both failed.", initializationException, shutdownException);
@@ -144,7 +146,7 @@ namespace SeweralIdeas.StateMachines
                 {
                     throw new InvalidProgramException("This should not ever happen..?");
                 }
-                
+
                 _messageConsumed = false;
                 _rootState.StateEnter();
             }
@@ -183,7 +185,7 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        private static Handler<ITransition, IState> msg_transition = (handler, dest) =>
+        private static readonly Handler<ITransition, IState> msg_transition = (handler, dest) =>
         {
             handler.TransitTo(dest);
         };
@@ -253,7 +255,7 @@ namespace SeweralIdeas.StateMachines
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
-        private void WarnUnclaimedTransition(string destinationName)
+        private void WarnUnclaimedTransition(string? destinationName)
         {
             if (!_messageConsumed)
             {
@@ -339,7 +341,7 @@ namespace SeweralIdeas.StateMachines
             {
                 while (InitializationState == InitState.Initialized)
                 {
-                    if (_transitionQueue.TryDequeue(out Message transition))
+                    if (_transitionQueue.TryDequeue(out Message? transition))
                     {
                         try
                         {
@@ -354,7 +356,7 @@ namespace SeweralIdeas.StateMachines
                         continue;
                     }
 
-                    if (_messageQueue.TryDequeue(out Message message))
+                    if (_messageQueue.TryDequeue(out Message? message))
                     {
                         try
                         {
@@ -445,11 +447,15 @@ namespace SeweralIdeas.StateMachines
             public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
 
+        // Fields are always populated via object-initializer at construction; default(InitContext)
+        // is never used. Suppress the uninitialized-field warning.
+#pragma warning disable CS8618
         internal struct InitContext
         {
             public StateMachine stateMachine;
             public List<IState> iStates;
             public List<IStateBase> iBaseStates;
         }
+#pragma warning restore CS8618
     }
 }
