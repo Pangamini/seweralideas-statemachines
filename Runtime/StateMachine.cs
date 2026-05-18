@@ -65,6 +65,16 @@ namespace SeweralIdeas.StateMachines
 
         IState IHasTopState.rootState => _rootState;
 
+        internal IState Root => _rootState;
+
+        /// <summary>
+        /// Walk the state machine's tree. Returns an allocation-aware struct enumerable;
+        /// use with <c>foreach</c>. Iteration yields each visited state in depth-first order
+        /// with depth, active-flag, and has-children metadata on each <see cref="StateNode"/>.
+        /// If the machine is not initialized the walk is empty.
+        /// </summary>
+        public StateWalker Walk(WalkMode mode = WalkMode.AllStates) => new(this, mode);
+
         public void WriteLine(string text)
         {
             _debugLog(text);

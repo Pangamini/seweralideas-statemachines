@@ -274,6 +274,13 @@ namespace SeweralIdeas.StateMachines
         {
             stateMachine._messageConsumed = false;
         }
+
+        // Walk-protocol overrides. Override in HierarchicalState and OrthogonalState; SimpleState
+        // inherits the no-children defaults below. Used by StateMachine.Walk().
+        internal virtual int WalkChildCount(WalkMode mode) => 0;
+        internal virtual State WalkChild(int index, WalkMode mode)
+            => throw new InvalidOperationException($"State {GetType().Name} has no walk children");
+        internal virtual bool WalkIsChildActive(State child) => false;
     }
 
     public abstract class State<TActor, TParent> : State where TParent : IParentState where TActor : class
@@ -484,6 +491,23 @@ namespace SeweralIdeas.StateMachines
             base.Shutdown();
         }
 
+        internal sealed override int WalkChildCount(WalkMode mode)
+        {
+            if (_childStates is null) return 0;
+            if (mode == WalkMode.ActiveOnly)
+                return _activeSubState != null ? 1 : 0;
+            return _childStates.Length;
+        }
+
+        internal sealed override State WalkChild(int index, WalkMode mode)
+        {
+            if (mode == WalkMode.ActiveOnly)
+                return _activeSubState!;
+            return _childStates[index];
+        }
+
+        internal sealed override bool WalkIsChildActive(State child) => ReferenceEquals(_activeSubState, child);
+
 #if UNITY
         public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
         {
@@ -606,6 +630,15 @@ namespace SeweralIdeas.StateMachines
             _branches = null!;
             base.Shutdown();
         }
+
+        internal sealed override int WalkChildCount(WalkMode mode) => _branches?.Length ?? 0;
+
+        internal sealed override State WalkChild(int index, WalkMode mode)
+            => _branches[index].rootState.state;
+
+        // Every branch of an active orthogonal state is itself active; the active descent within
+        // each branch is handled recursively by that branch's own WalkChildCount/WalkChild.
+        internal sealed override bool WalkIsChildActive(State child) => true;
 
         internal sealed override void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
