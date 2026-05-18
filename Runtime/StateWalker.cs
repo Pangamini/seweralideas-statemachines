@@ -17,6 +17,23 @@ namespace SeweralIdeas.StateMachines
     }
 
     /// <summary>
+    /// Recursive visitor for a state machine's tree. Use with <see cref="StateMachine.Visit"/>
+    /// when you need explicit begin/end boundaries per state (for example, to recreate a
+    /// nested-box layout in IMGUI). For flat depth-first iteration use <see cref="StateMachine.Walk"/>
+    /// instead.
+    ///
+    /// Visit order, for each visited state:
+    /// 1. <see cref="BeginState"/> is called.
+    /// 2. Each child of the state is visited recursively.
+    /// 3. <see cref="EndState"/> is called.
+    /// </summary>
+    public interface IStateVisitor
+    {
+        void BeginState(State state, int depth, bool isActive, bool hasChildren);
+        void EndState(State state, int depth, bool isActive, bool hasChildren);
+    }
+
+    /// <summary>
     /// A single state yielded by <see cref="StateWalker"/>. Carries the state itself plus the
     /// minimal context an external renderer or inspector needs without having to recurse.
     /// </summary>

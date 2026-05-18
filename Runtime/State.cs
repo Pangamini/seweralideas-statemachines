@@ -1,14 +1,7 @@
 ﻿#nullable enable
 
-#if UNITY_5_3_OR_NEWER
-#define UNITY
-#if DEBUG
+#if UNITY_5_3_OR_NEWER && DEBUG
 #define UNITY_PROFILING
-#endif
-#endif
-
-#if UNITY
-using UnityEngine;
 #endif
 
 #if UNITY_PROFILING
@@ -78,7 +71,7 @@ namespace SeweralIdeas.StateMachines
 
         internal State() { }
 
-        protected static bool Contains(IStateBase[] states, IStateBase state)
+        protected static bool Contains<T>(T[] states, T state) where T : class
         {
             for (int i = 0; i < states.Length; ++i)
             {
@@ -88,60 +81,6 @@ namespace SeweralIdeas.StateMachines
 
             return false;
         }
-
-#if UNITY
-        public abstract void DrawGUI(StateMachine.GUISettings settings, bool isActive);
-        protected virtual void OnGUI() { }
-
-        protected static StateGUIScope StateGUI(State state, StateMachine.GUISettings settings, bool isActive)
-        {
-            var scope = new StateGUIScope
-            {
-                settings = settings,
-                isActive = isActive,
-                state = state
-            };
-            scope.Initialize();
-            return scope;
-        }
-
-        private static readonly GUILayoutOption[] s_expandHeightOptions = {GUILayout.ExpandHeight(true)};
-
-#pragma warning disable CS8618 // fields populated via object-initializer in StateGUI(); slated for removal in the visitor-API refactor
-        protected struct StateGUIScope : IDisposable
-        {
-            public State state;
-            public StateMachine.GUISettings settings;
-            public bool isActive;
-
-            public void Initialize()
-            {
-                var origColor = GUI.color;
-                GUI.color = settings.GetColor(isActive);
-                GUILayout.BeginVertical(state.name, GUI.skin.window, s_expandHeightOptions);
-                GUI.color = origColor;
-                    
-                state.OnGUI();
-
-                if (settings.fieldsMode != StateMachine.GUISettings.FieldsMode.None)
-                {
-                    var info = StateDebugInfo.Get(state.GetType());
-                    for (int i = 0; i < info.Count; ++i)
-                    {
-                        var field = info[i];
-                        if(field.show || settings.fieldsMode == StateMachine.GUISettings.FieldsMode.AllFields)
-                            GUILayout.Label($"{field.fieldInfo.Name}: \t{field.fieldInfo.GetValue(state)}");
-                    }
-                }
-            }
-
-            public void Dispose()
-            {
-                GUILayout.EndVertical();
-            }
-        }
-#pragma warning restore CS8618
-#endif
 
         internal abstract IParentState parentState { get; set; }
 
@@ -323,7 +262,7 @@ namespace SeweralIdeas.StateMachines
         internal override IParentState parentState
         {
             get => _parent;
-            set => _parent = (TParent)value!;
+            set => _parent = (TParent)value;
         }
     }
 
@@ -332,23 +271,23 @@ namespace SeweralIdeas.StateMachines
     public class SimpleState<TActor, TParent> : State<TActor, TParent> where TParent : IParentState where TActor : class
     {
 
-        internal sealed override void EnterBegin()
+        internal override sealed void EnterBegin()
         {
             base.EnterBegin();
         }
 
-        internal sealed override void EnterEnd()
+        internal override sealed void EnterEnd()
         {
             base.EnterEnd();
         }
 
-        internal sealed override void Exit()
+        internal override sealed void Exit()
         {
             OnExit();
             base.Exit();
         }
 
-        internal sealed override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
+        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
             base.Initialize(context, hasTopState);
             OnInitialize();
@@ -356,20 +295,10 @@ namespace SeweralIdeas.StateMachines
         
         protected virtual void OnInitialize() { }
 
-        internal sealed override void Shutdown()
+        internal override sealed void Shutdown()
         {
             base.Shutdown();
         }
-
-#if UNITY
-        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
-        {
-            using (StateGUI(this, settings, isActive))
-            {             
-            }
-        }
-#endif
-
     }
 
     public abstract class HierarchicalState<TActor> : HierarchicalState<TActor, IParentState> where TActor : class
@@ -381,14 +310,14 @@ namespace SeweralIdeas.StateMachines
         private State? _activeSubState;
         private IState? _entrySubState;
 
-        private State[] _childStates = null!;
+        private State[]? _childStates = null;
 
-        public int ChildCount => _childStates.Length;
-        public State GetChild(int index) => _childStates[index];
+        public int ChildCount => _childStates!.Length;
+        public State GetChild(int index) => _childStates![index];
 
         void StateMachine.ITransition.TransitTo(IState state)
         {
-            if (Contains(_childStates, state.state))
+            if (Contains(_childStates!, state.state))
             {
                 _activeSubState?.Exit();
                 _activeSubState = state.state;
@@ -400,7 +329,7 @@ namespace SeweralIdeas.StateMachines
 
         void StateMachine.ITransition.TransitTo<TArg>(IState<TArg> state, TArg arg)
         {
-            if (Contains(_childStates, state.state))
+            if (Contains(_childStates!, state.state))
             {
                 _activeSubState?.Exit();
                 _activeSubState = state.state;
@@ -411,26 +340,26 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        internal sealed override void EnterBegin()
+        internal override sealed void EnterBegin()
         {
             base.EnterBegin();
             _activeSubState = _entrySubState?.state;
         }
 
-        internal sealed override void EnterEnd()
+        internal override sealed void EnterEnd()
         {
             base.EnterEnd();
             _entrySubState?.StateEnter();
         }
 
-        internal sealed override void Exit()
+        internal override sealed void Exit()
         {
             _activeSubState?.Exit();
             OnExit();
             base.Exit();
         }
 
-        internal sealed override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
+        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
         {
             base.Initialize(context, hasTopState);
             var childStates = context.iBaseStates;
@@ -480,47 +409,34 @@ namespace SeweralIdeas.StateMachines
         /// <param name="subStates">Add every child state to this list.</param>
         protected abstract void OnInitialize(out IState? entrySubState, List<IStateBase> subStates);
 
-        internal sealed override void Shutdown()
+        internal override sealed void Shutdown()
         {
-            foreach (var child in _childStates)
+            foreach (var child in _childStates!)
             {
-                child?.Shutdown();
+                child.Shutdown();
             }
 
             _childStates = null!;
             base.Shutdown();
         }
 
-        internal sealed override int WalkChildCount(WalkMode mode)
+        internal override sealed int WalkChildCount(WalkMode mode)
         {
-            if (_childStates is null) return 0;
+            if (_childStates is null)
+                return 0;
             if (mode == WalkMode.ActiveOnly)
                 return _activeSubState != null ? 1 : 0;
             return _childStates.Length;
         }
 
-        internal sealed override State WalkChild(int index, WalkMode mode)
+        internal override sealed State WalkChild(int index, WalkMode mode)
         {
             if (mode == WalkMode.ActiveOnly)
                 return _activeSubState!;
-            return _childStates[index];
+            return _childStates![index];
         }
 
-        internal sealed override bool WalkIsChildActive(State child) => ReferenceEquals(_activeSubState, child);
-
-#if UNITY
-        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
-        {
-            using (StateGUI(this, settings, isActive))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    foreach (var child in _childStates)
-                        child.DrawGUI(settings, isActive && child == _activeSubState);
-                }
-            }
-        }
-#endif
+        internal override sealed bool WalkIsChildActive(State child) => ReferenceEquals(_activeSubState, child);
     }
 
 
@@ -536,39 +452,25 @@ namespace SeweralIdeas.StateMachines
             public IState rootState { get; set; } = null!;
         }
 
-        private OrthogonalBranch[] _branches = null!;
+        private OrthogonalBranch[]? _branches = null;
 
-        public int ChildCount => _branches.Length;
+        public int ChildCount => _branches!.Length;
 
-#if UNITY
-        public sealed override void DrawGUI(StateMachine.GUISettings settings, bool isActive)
-        {
-            using (StateGUI(this, settings, isActive))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    foreach (var child in _branches)
-                        child.rootState.state.DrawGUI(settings, isActive);
-                }
-            }
-        }
-#endif
-
-        internal sealed override void EnterBegin()
+        internal override sealed void EnterBegin()
         {
             base.EnterBegin();
         }
 
-        internal sealed override void EnterEnd()
+        internal override sealed void EnterEnd()
         {
             base.EnterEnd();
-            foreach (var subState in _branches)
+            foreach (var subState in _branches!)
                 subState.rootState.StateEnter();
         }
 
-        internal sealed override void Exit()
+        internal override sealed void Exit()
         {
-            foreach (var subState in _branches)
+            foreach (var subState in _branches!)
                 subState.rootState.state.Exit();
             OnExit();
             base.Exit();
@@ -617,13 +519,13 @@ namespace SeweralIdeas.StateMachines
         /// </summary>
         protected abstract void OnInitialize(List<IState> subStates);
 
-        internal sealed override void Shutdown()
+        internal override sealed void Shutdown()
         {
             if (_branches != null)
             {
                 for (int i = 0; i < _branches.Length; ++i)
                 {
-                    _branches[i]?.topState?.Shutdown();
+                    _branches[i].topState?.Shutdown();
                 }
             }
 
@@ -631,19 +533,19 @@ namespace SeweralIdeas.StateMachines
             base.Shutdown();
         }
 
-        internal sealed override int WalkChildCount(WalkMode mode) => _branches?.Length ?? 0;
+        internal override sealed int WalkChildCount(WalkMode mode) => _branches?.Length ?? 0;
 
-        internal sealed override State WalkChild(int index, WalkMode mode)
-            => _branches[index].rootState.state;
+        internal override sealed State WalkChild(int index, WalkMode mode)
+            => _branches![index].rootState.state;
 
         // Every branch of an active orthogonal state is itself active; the active descent within
         // each branch is handled recursively by that branch's own WalkChildCount/WalkChild.
-        internal sealed override bool WalkIsChildActive(State child) => true;
+        internal override sealed bool WalkIsChildActive(State child) => true;
 
-        internal sealed override void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
+        internal override sealed void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
         {
             var anyBranchConsumed = false;
-            foreach (var branch in _branches)
+            foreach (var branch in _branches!)
             {
                 stateMachine._messageConsumed = false;
                 branch.topState!.ReceiveMessage(handler);
@@ -654,10 +556,10 @@ namespace SeweralIdeas.StateMachines
                 base.ReceiveMessage(handler);
         }
 
-        internal sealed override void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
+        internal override sealed void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
         {
             var anyBranchConsumed = false;
-            foreach (var branch in _branches)
+            foreach (var branch in _branches!)
             {
                 stateMachine._messageConsumed = false;
                 branch.topState!.ReceiveMessage(handler, arg);

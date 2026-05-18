@@ -1,14 +1,7 @@
 ﻿#nullable enable
 
-#if UNITY_5_3_OR_NEWER
-#define UNITY
-#if DEBUG
+#if UNITY_5_3_OR_NEWER && DEBUG
 #define UNITY_PROFILING
-#endif
-#endif
-
-#if UNITY
-using UnityEngine;
 #endif
 
 #if UNITY_PROFILING
@@ -74,6 +67,37 @@ namespace SeweralIdeas.StateMachines
         /// If the machine is not initialized the walk is empty.
         /// </summary>
         public StateWalker Walk(WalkMode mode = WalkMode.AllStates) => new(this, mode);
+
+        /// <summary>
+        /// Recursively visit the tree, calling <see cref="IStateVisitor.BeginState"/> before
+        /// each state's children and <see cref="IStateVisitor.EndState"/> after. Use this when
+        /// you need explicit boundaries per state — for example, to recreate the original
+        /// nested-box IMGUI layout where each composite state's children sit inside its box.
+        /// No-op if the machine is not initialized.
+        /// </summary>
+        public void Visit(IStateVisitor visitor, WalkMode mode = WalkMode.AllStates)
+        {
+            if (visitor == null) throw new ArgumentNullException(nameof(visitor));
+            if (!IsInitialized) return;
+            VisitState(_rootState.state, depth: 0, isActive: true, visitor, mode);
+        }
+
+        private static void VisitState(State state, int depth, bool isActive, IStateVisitor visitor, WalkMode mode)
+        {
+            int childCount = state.WalkChildCount(mode);
+            bool hasChildren = childCount > 0;
+
+            visitor.BeginState(state, depth, isActive, hasChildren);
+
+            for (int i = 0; i < childCount; i++)
+            {
+                State child = state.WalkChild(i, mode);
+                bool childActive = isActive && state.WalkIsChildActive(child);
+                VisitState(child, depth + 1, childActive, visitor, mode);
+            }
+
+            visitor.EndState(state, depth, isActive, hasChildren);
+        }
 
         public void WriteLine(string text)
         {
@@ -184,10 +208,8 @@ namespace SeweralIdeas.StateMachines
             }
             finally
             {
-#if UNITY
                 Debug.Assert(_messageQueue.Count == 0);
                 Debug.Assert(_transitionQueue.Count == 0);
-#endif
                 _messageQueue.Clear();
                 _transitionQueue.Clear();
                 InitializationState = InitState.Offline;
@@ -195,14 +217,14 @@ namespace SeweralIdeas.StateMachines
         }
 
 
-        private static readonly Handler<ITransition, IState> msg_transition = (handler, dest) =>
+        private static readonly Handler<ITransition, IState> MsgTransition = (handler, dest) =>
         {
             handler.TransitTo(dest);
         };
 
         private static class TransitionHandler<TArg>
         {
-            public static readonly Handler<ITransition, (IState<TArg>, TArg)> msg_transition =
+            public static readonly Handler<ITransition, (IState<TArg>, TArg)> MsgTransition =
                 (ITransition handler, (IState<TArg> destination, TArg _arg) args) =>
                 {
                     handler.TransitTo(args.destination, args._arg);
@@ -213,7 +235,7 @@ namespace SeweralIdeas.StateMachines
         {
             InitGuard();
             Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
-            var handler = msg_transition;
+            var handler = MsgTransition;
 
             if (StartMessageReceiving())
             {
@@ -240,7 +262,7 @@ namespace SeweralIdeas.StateMachines
         {
             InitGuard();
             Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
-            var handler = TransitionHandler<TArg>.msg_transition;
+            var handler = TransitionHandler<TArg>.MsgTransition;
 
             if (StartMessageReceiving())
             {
@@ -396,42 +418,6 @@ namespace SeweralIdeas.StateMachines
             
         }
 
-#if UNITY
-        [Serializable]
-        public class GUISettings
-        {
-            public enum FieldsMode
-            {
-                None,
-                Fields,
-                AllFields
-            }
-
-            public FieldsMode fieldsMode;
-            public Color stateColor_normal;
-            public Color stateColor_active;
-
-            public Color GetColor(bool isActive)
-            {
-                if (isActive)
-                    return stateColor_active;
-                else
-                    return stateColor_normal;
-            }
-        }
-        
-        public void OnGUI(GUISettings settings)
-        {
-            if (!IsInitialized)
-            {
-                GUILayout.Label("StateMachine not initialized");
-                return;
-            }
-            
-            _rootState.state.DrawGUI(settings, IsInitialized);
-        }
-#endif
-
         private void InitGuard()
         {
             if (!IsInitialized)
@@ -457,15 +443,11 @@ namespace SeweralIdeas.StateMachines
             public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
 
-        // Fields are always populated via object-initializer at construction; default(InitContext)
-        // is never used. Suppress the uninitialized-field warning.
-#pragma warning disable CS8618
         internal struct InitContext
         {
             public StateMachine stateMachine;
             public List<IState> iStates;
             public List<IStateBase> iBaseStates;
         }
-#pragma warning restore CS8618
     }
 }
