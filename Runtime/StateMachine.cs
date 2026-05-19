@@ -302,62 +302,149 @@ namespace SeweralIdeas.StateMachines
             HandleMessagesInternal();
         }
 
+        /// <summary>
+        /// Send a message to the active state chain. Fire-and-forget: returns nothing.
+        /// If called from inside a handler (nested), the message is queued and dispatched
+        /// after the outer dispatch frame completes. Use <see cref="SendMessageNow{TReceiver}(Handler{TReceiver})"/>
+        /// or <see cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/> when you need
+        /// to know whether the message was consumed.
+        /// </summary>
         public void SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
         {
             InitGuard();
-
-            if(StartMessageReceiving())
-            {
-                try
-                {
-                    _messageConsumed = false;
-#if UNITY_PROFILING
-                    Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
-#endif
-                    _topState.ReceiveMessage(handler);
-#if UNITY_PROFILING
-                    Profiler.EndSample();
-#endif
-                }
-                finally
-                {
-                    StopMessageReceiving();
-                    HandleMessagesInternal();
-                }
-            }
-            else
+            if (_receivingMessages)
             {
                 _messageQueue.Enqueue(Message<TReceiver>.Create(handler));
                 HandleMessagesInternal();
             }
+            else
+            {
+                DispatchSyncCore(handler);
+            }
         }
 
+        /// <inheritdoc cref="SendMessage{TReceiver}(Handler{TReceiver})"/>
         public void SendMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
         {
             InitGuard();
-
-            if (StartMessageReceiving())
+            if (_receivingMessages)
             {
-                try
-                {
-                    _messageConsumed = false;
-#if UNITY_PROFILING
-                    Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
-#endif
-                    _topState.ReceiveMessage(handler, arg);
-#if UNITY_PROFILING
-                    Profiler.EndSample();
-#endif
-                }
-                finally
-                {
-                    StopMessageReceiving();
-                    HandleMessagesInternal();
-                }
+                _messageQueue.Enqueue(Message<TReceiver, TArg>.Create(handler, arg));
+                HandleMessagesInternal();
             }
             else
             {
-                _messageQueue.Enqueue(Message<TReceiver, TArg>.Create(handler, arg));
+                DispatchSyncCore(handler, arg);
+            }
+        }
+
+        /// <summary>
+        /// Try to send a message synchronously. Returns <c>true</c> if dispatch happened in this
+        /// call, in which case <paramref name="consumed"/> reflects whether any state consumed the
+        /// message. Returns <c>false</c> when called from inside a handler (nested dispatch is not
+        /// supported) — in that case the message is <b>not</b> sent at all; <paramref name="consumed"/>
+        /// is set to <c>false</c>. Callers who want a queued fallback should follow with
+        /// <see cref="SendMessage{TReceiver}(Handler{TReceiver})"/> explicitly.
+        /// </summary>
+        public bool TrySendMessageNow<TReceiver>(Handler<TReceiver> handler, out bool consumed) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+            {
+                consumed = false;
+                return false;
+            }
+            consumed = DispatchSyncCore(handler);
+            return true;
+        }
+
+        /// <inheritdoc cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/>
+        public bool TrySendMessageNow<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg, out bool consumed) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+            {
+                consumed = false;
+                return false;
+            }
+            consumed = DispatchSyncCore(handler, arg);
+            return true;
+        }
+
+        /// <summary>
+        /// Send a message synchronously and return whether any state consumed it. Throws
+        /// <see cref="InvalidOperationException"/> if called from inside a handler — at that point
+        /// the message is not sent. Equivalent to calling <see cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/>
+        /// and throwing when it returns <c>false</c>.
+        /// </summary>
+        /// <returns><c>true</c> if a state's handler consumed the message without calling
+        /// <see cref="State.PropagateMessage"/>; <c>false</c> otherwise.</returns>
+        public bool SendMessageNow<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
+        {
+            if (!TrySendMessageNow(handler, out bool consumed))
+                throw new InvalidOperationException(
+                    "SendMessageNow cannot be called from inside a handler (nested dispatch). " +
+                    "Use TrySendMessageNow to handle this case without throwing, or " +
+                    "SendMessage for fire-and-forget queued delivery.");
+            return consumed;
+        }
+
+        /// <inheritdoc cref="SendMessageNow{TReceiver}(Handler{TReceiver})"/>
+        public bool SendMessageNow<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
+        {
+            if (!TrySendMessageNow(handler, arg, out bool consumed))
+                throw new InvalidOperationException(
+                    "SendMessageNow cannot be called from inside a handler (nested dispatch). " +
+                    "Use TrySendMessageNow to handle this case without throwing, or " +
+                    "SendMessage for fire-and-forget queued delivery.");
+            return consumed;
+        }
+
+        // Shared synchronous dispatch core. Precondition: not currently receiving (caller's
+        // responsibility). Returns whether the dispatched message was consumed (i.e. some state's
+        // handler ran without calling PropagateMessage). The return is captured before the finally's
+        // queue-drain runs, so it reflects this message specifically, not any side-effects the
+        // bubble queued.
+        private bool DispatchSyncCore<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
+        {
+            StartMessageReceiving();
+            try
+            {
+                _messageConsumed = false;
+#if UNITY_PROFILING
+                Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
+#endif
+                _topState.ReceiveMessage(handler);
+#if UNITY_PROFILING
+                Profiler.EndSample();
+#endif
+                return _messageConsumed;
+            }
+            finally
+            {
+                StopMessageReceiving();
+                HandleMessagesInternal();
+            }
+        }
+
+        private bool DispatchSyncCore<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
+        {
+            StartMessageReceiving();
+            try
+            {
+                _messageConsumed = false;
+#if UNITY_PROFILING
+                Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
+#endif
+                _topState.ReceiveMessage(handler, arg);
+#if UNITY_PROFILING
+                Profiler.EndSample();
+#endif
+                return _messageConsumed;
+            }
+            finally
+            {
+                StopMessageReceiving();
                 HandleMessagesInternal();
             }
         }
