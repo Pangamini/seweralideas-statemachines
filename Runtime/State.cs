@@ -76,7 +76,7 @@ namespace SeweralIdeas.StateMachines
         protected void TransitTo(IState destination) => StateMachine.TransitTo(destination);
         protected void TransitTo<TArg>(IState<TArg> destination, TArg arg) => StateMachine.TransitTo(destination, arg);
 
-        protected void PropagateMessage() => StateMachine._messageConsumed = false;
+        public void PropagateMessage() => StateMachine._messageConsumed = false;
 
         private State?   _activeSubState;
         private IState?  _entrySubState;
