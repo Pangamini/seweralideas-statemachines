@@ -30,7 +30,7 @@ namespace SeweralIdeas.StateMachines
             void TransitTo<TArg>(IState<TArg> state, TArg arg);
         }
 
-        public object? Actor { get; private set; }
+        public readonly object Actor;
 
         private readonly IState _rootState;
         private readonly Action<string> _debugLog;
@@ -109,14 +109,18 @@ namespace SeweralIdeas.StateMachines
             EnterExit = 1 << 0,
         }
 
-        public StateMachine(string name, IState rootState, Action<string>? debugLog = null)
+        public StateMachine(string name, object actor, IState rootState, Action<string>? debugLog = null)
         {
             _debugLog = debugLog ?? Console.WriteLine;
             Name = name;
             _rootState = rootState;
+            Actor = actor;
+            
+            List<IStateBase> stateList = new();
+            rootState.State.Build(new(this, stateList));
         }
 
-        public void Initialize(object actor)
+        public void Initialize()
         {
             if (InitializationState != InitState.Offline)
                 throw new InvalidOperationException("StateMachine already initialized");
@@ -124,19 +128,12 @@ namespace SeweralIdeas.StateMachines
             InitializationState = InitState.Initializing;
             WriteLine($"{Name} initializing");
 
-            Actor = actor;
             _messageQueue.Clear();
             _transitionQueue.Clear();
 
             try
             {
-                var context = new InitContext()
-                {
-                    stateMachine = this,
-                    subStates = new List<IStateBase>()
-                };
-
-                _rootState.State.Initialize(context);
+                _rootState.State.Initialize();
             }
             catch(Exception initializationException)
             {
@@ -153,7 +150,6 @@ namespace SeweralIdeas.StateMachines
                 {
                     _messageQueue.Clear();
                     _transitionQueue.Clear();
-                    Actor = null;
                     InitializationState = InitState.Offline;
                 }
 
@@ -612,15 +608,5 @@ namespace SeweralIdeas.StateMachines
             public InitializationException(string message) : base(message) { }
             public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
-
-        // Fields are always populated via object-initializer at construction; default(InitContext)
-        // is never used. Suppress the uninitialized-field warning.
-#pragma warning disable CS8618
-        internal struct InitContext
-        {
-            public StateMachine stateMachine;
-            public List<IStateBase> subStates;
-        }
-#pragma warning restore CS8618
     }
 }
