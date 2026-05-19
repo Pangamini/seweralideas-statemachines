@@ -110,41 +110,65 @@ namespace SeweralIdeas.StateMachines
         protected virtual void OnExit() { }
         protected virtual void OnShutdown() { }
 
-        internal virtual void Initialize(in StateMachine.InitContext context)
+        internal struct BuildContext
         {
-            StateMachine = context.stateMachine;
+            public readonly StateMachine     Machine;
+            public readonly List<IStateBase> StateList;
+            
+            public BuildContext(StateMachine machine, List<IStateBase> stateList)
+            {
+                Machine = machine;
+                StateList = stateList;
+            }
+        }
+        
+        internal virtual void Build(BuildContext ctx)
+        {
+            StateMachine = ctx.Machine;
 
-            var subStates = context.subStates;
-            DeclareChildren(out _entrySubState, subStates);
+            ctx.StateList.Clear();
+            DeclareChildren(out _entrySubState, ctx.StateList);
 
-            foreach (var s in subStates)
+            // Auto-add entry sub-state if the user didn't list it explicitly.
+            if (_entrySubState != null && !ctx.StateList.Contains(_entrySubState))
+                ctx.StateList.Add(_entrySubState);
+
+            foreach (var s in ctx.StateList)
             {
                 if (s is null)
                     throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
             }
-
-            // Auto-add entry sub-state if the user didn't list it explicitly.
-            if (_entrySubState != null && !subStates.Contains(_entrySubState))
-                subStates.Add(_entrySubState);
-
-            if (subStates.Count > 0)
+            
+            if (ctx.StateList.Count > 0)
             {
-                _childStates = new State[subStates.Count];
-                for (int i = 0; i < subStates.Count; i++)
+                _childStates = new State[ctx.StateList.Count];
+                for (int i = 0; i < ctx.StateList.Count; i++)
                 {
-                    var child = subStates[i].State;
+                    var child = ctx.StateList[i].State;
+                    
                     if (child.ParentState != null)
                         throw new StateMachine.InitializationException(
                             $"Cannot add state {child.GetType()} as a child of {GetType()}; it already has a parent.");
+                    
                     child.ParentState = this;
                     _childStates[i] = child;
                 }
-                subStates.Clear();
+                ctx.StateList.Clear();
 
                 foreach (var child in _childStates)
-                    child.Initialize(context);
+                    child.Build(ctx);
             }
-
+            else
+            {
+                _childStates = Array.Empty<State>();
+            }
+        }
+        
+        internal void Initialize()
+        {
+            foreach (var child in _childStates!)
+                child.Initialize();
+            
             OnInitialize();
         }
 
@@ -156,11 +180,8 @@ namespace SeweralIdeas.StateMachines
                     child.Shutdown();
             }
             OnShutdown();
-            _childStates = null;
+            
             _activeSubState = null;
-            _entrySubState = null;
-            StateMachine = null!;
-            ParentState = null;
         }
 
         internal void EnterBegin()
@@ -337,13 +358,13 @@ namespace SeweralIdeas.StateMachines
     /// </summary>
     public abstract class State<TActor, TParent> : State where TActor : class where TParent : State
     {
-        private TActor _actor = null!;
+        private TActor? _actor = null!;
 
         public TActor Actor
         {
             get
             {
-                AssertInitialized();
+                AssertBuilt();
                 return _actor;
             }
         }
@@ -351,7 +372,7 @@ namespace SeweralIdeas.StateMachines
         public TParent Parent => (TParent)ParentState!;
 
         [System.Diagnostics.Conditional("DEBUG")]
-        private void AssertInitialized()
+        private void AssertBuilt()
         {
             if (((object?)StateMachine) is null)
                 throw new InvalidOperationException(
@@ -360,10 +381,10 @@ namespace SeweralIdeas.StateMachines
                     "States must not access Actor from their constructors — use OnInitialize instead.");
         }
         
-        internal override void Initialize(in StateMachine.InitContext context)
+        internal override void Build(BuildContext ctx)
         {
-            _actor = (context.stateMachine.Actor as TActor)!;
-            base.Initialize(context);
+            _actor = ctx.Machine.Actor as TActor;
+            base.Build(ctx);
         }
     }
 }

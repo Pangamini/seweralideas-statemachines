@@ -14,14 +14,14 @@ namespace SeweralIdeas.StateMachines
         private readonly Action? _onMessagesAvailable;
         private int _hasMessages;
 
-        public ConcurrentStateMachine(string name, IState rootState, Action<string>? debugLog,
+        public ConcurrentStateMachine(string name, object actor, IState rootState, Action<string>? debugLog,
             Action? onMessagesAvailable, StateMachine.LogFlags logFlags = StateMachine.LogFlags.None)
         {
             _lock.EnterWriteLock();
             try
             {
                 _onMessagesAvailable = onMessagesAvailable;
-                _machine = new StateMachine(name, rootState, debugLog);
+                _machine = new StateMachine(name, actor, rootState, debugLog);
                 _machine.Logging = logFlags;
             }
             finally
@@ -53,12 +53,12 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
-        public void Initialize(object actor)
+        public void Initialize()
         {
             _lock.EnterWriteLock();
             try
             {
-                _machine.Initialize(actor);
+                _machine.Initialize();
             }
             finally
             {
