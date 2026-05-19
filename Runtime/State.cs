@@ -87,15 +87,19 @@ namespace SeweralIdeas.StateMachines
         internal State? ActiveSubState => _activeSubState;
 
         /// <summary>
-        /// Override to declare child states for a composite state. Leaves should not override
-        /// this method (the default declares no children).
+        /// Build-time hook — runs once when the owning <see cref="StateMachine"/> is constructed.
+        /// Declare child states here; also a good place for one-time setup that needs <c>Actor</c>
+        /// (e.g. constructing a child <see cref="StateMachine"/> that should survive
+        /// <see cref="StateMachine.Initialize"/> / <see cref="StateMachine.Shutdown"/> cycles).
+        /// At call time, <c>Actor</c> and <c>StateMachine</c> are already bound. Leaves with no
+        /// children don't need to override this method.
         /// </summary>
         /// <param name="entrySubState">The child to enter by default when this state is entered.
         /// Set to <c>null</c> to defer the entry decision to runtime — typically by calling
         /// <c>TransitTo</c> from inside <see cref="IState.Enter"/>.</param>
         /// <param name="subStates">Add each child state to this list. The list is reused across
         /// the build pass and is cleared before each invocation, so it is guaranteed empty on entry.</param>
-        protected virtual void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+        protected virtual void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = null;
         }
@@ -131,7 +135,7 @@ namespace SeweralIdeas.StateMachines
             StateMachine = ctx.Machine;
 
             ctx.StateList.Clear();
-            DeclareChildren(out _entrySubState, ctx.StateList);
+            OnBuild(out _entrySubState, ctx.StateList);
 
             // Auto-add entry sub-state if the user didn't list it explicitly.
             if (_entrySubState != null && !ctx.StateList.Contains(_entrySubState))
