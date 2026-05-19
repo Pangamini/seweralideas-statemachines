@@ -6,7 +6,7 @@ Hierarchical finite state machines for C#, with first-class Unity support.
 
 `SeweralIdeas.StateMachines` is a runtime library for building hierarchical state machines (HFSMs) in C#. It is built around three ideas:
 
-1. **Real state graphs are nested.** A `Game` state contains `Menu` / `Playing` / `Paused`; `Playing` itself contains `Idle` / `Walking` / `InDialogue`. Modeling that flat leads to combinatorial blow-up. `HierarchicalState` (one child active at a time) and `OrthogonalState` (multiple children active in parallel) are first-class.
+1. **Real state graphs are nested.** A `Game` state contains `Menu` / `Playing` / `Paused`; `Playing` itself contains `Idle` / `Walking` / `InDialogue`. Modeling that flat leads to combinatorial blow-up. A single `State<TActor>` class supports both leaves and composites (states with children, exactly one child active at a time). When you need parallel concurrent state, compose multiple `StateMachine` instances explicitly — see the Door and Lever sample.
 2. **Behaviors compose like ordinary classes.** A "flees from threats" or "walks along a path" state is a building block. State classes here are generic over their actor and parent, so you can write abstract base states and reuse them across actors.
 3. **State scopes everything.** Subscribe to events in `OnEnter`, unsubscribe in `OnExit`. Within the machine, communication happens through typed *messages* that bubble from the active leaf to the root, hitting any state along the way that implements the matching receiver interface.
 
@@ -34,17 +34,17 @@ public class Game
     public void Stop()           => _machine.Shutdown();
 
     // 3. Define states.
-    class State_Root : HierarchicalState<Game>, IState
+    class State_Root : State<Game>, IState
     {
         readonly State_Idle _idle = new();
-        protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = _idle;
             subStates.Add(_idle);
         }
     }
 
-    class State_Idle : SimpleState<Game, State_Root>, IState, ITick
+    class State_Idle : State<Game, State_Root>, IState, ITick
     {
         void IState.Enter() { /* per-entry setup */ }
         void ITick.Tick(float dt) { /* per-tick work */ }
@@ -78,16 +78,15 @@ There is no NuGet package. The runtime is a small set of files under `Runtime/`.
 
 | Concept | What it is |
 |---|---|
-| **`StateMachine`** | The container. Holds the root state, an `actor`, and a message queue. You `Initialize` it, send messages, and `Shutdown`. |
-| **`actor`** | Any object you pass to `Initialize`. States typed `SimpleState<TActor>` / `HierarchicalState<TActor>` expose it as a strongly-typed `actor` property. It is the bridge between the machine and the world it controls. |
+| **`StateMachine`** | The container. Holds the root state, an `Actor`, and a message queue. You `Initialize` it, send messages, and `Shutdown`. |
+| **`Actor`** | Any object you pass to `Initialize`. States typed `State<TActor>` / `State<TActor, TParent>` expose it as a strongly-typed `Actor` property. It is the bridge between the machine and the world it controls. |
 | **Root state** | The state at the top of the hierarchy. There is exactly one. |
-| **`HierarchicalState`** | Has child states; exactly one is active at a time. Transitions inside the children move the "active" pointer. |
-| **`OrthogonalState`** | Has parallel child branches, all active at once. Each branch maintains its own active-state pointer and dispatches messages independently; all branches share the machine's single message and transition queues. |
-| **`SimpleState`** | A leaf. |
+| **`State<TActor>` / `State<TActor, TParent>`** | The single state base class. A leaf is a state that doesn't declare children; a composite declares children via `DeclareChildren` and has exactly one active at a time. The `TParent` overload exposes a strongly-typed `Parent` property for `Parent.SomeSibling` access. |
 | **Receiver interface** | An interface *you* define, e.g. `interface ITick { void Tick(float dt); }`. Any state can implement zero or more of these. |
 | **`Handler<TReceiver>` / `Handler<TReceiver, TArg>`** | A delegate that dispatches one specific receiver interface. Conventionally a `static readonly` field per message. |
 | **Message bubbling** | `machine.SendMessage(handler, arg)` walks from the active leaf upward through its parents. The first state that implements `TReceiver` consumes the message. The state can opt to keep it bubbling by calling `PropagateMessage()`. |
-| **Transition** | `TransitTo(targetState)` (or `TransitTo(target, arg)`). The transition bubbles up like a message until a `HierarchicalState` that contains the target as a child claims it; that parent exits its current child and enters the target. |
+| **Transition** | `TransitTo(targetState)` (or `TransitTo(target, arg)`). The transition bubbles up like a message until a state whose direct child is the target claims it; that parent exits its current child and enters the target. |
+| **Parallel concurrent state** | Compose explicitly: an outer state owns multiple `StateMachine` instances, fans out messages to whichever sub-machines care. The Door and Lever sample shows the pattern. |
 
 ## Tutorial: building a traffic light
 
@@ -117,13 +116,13 @@ public class TrafficLight
     public void Stop()         => _machine.Shutdown();
     public void Tick(float dt) => _machine.SendMessage(msg_tick, dt);
 
-    class State_Root : HierarchicalState<TrafficLight>, IState
+    class State_Root : State<TrafficLight>, IState
     {
         public readonly State_Red    Red    = new();
         public readonly State_Green  Green  = new();
         public readonly State_Yellow Yellow = new();
 
-        protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = Red;
             subStates.Add(Red);
@@ -132,7 +131,7 @@ public class TrafficLight
         }
     }
 
-    abstract class State_Timed : SimpleState<TrafficLight, State_Root>, IState, ITick
+    abstract class State_Timed : State<TrafficLight, State_Root>, IState, ITick
     {
         protected float _timeLeft;
         protected abstract float  Duration  { get; }
@@ -148,19 +147,19 @@ public class TrafficLight
         }
     }
 
-    class State_Red    : State_Timed { protected override float Duration => 5f; protected override IState NextState => parent.Green;  }
-    class State_Green  : State_Timed { protected override float Duration => 5f; protected override IState NextState => parent.Yellow; }
-    class State_Yellow : State_Timed { protected override float Duration => 1f; protected override IState NextState => parent.Red;    }
+    class State_Red    : State_Timed { protected override float Duration => 5f; protected override IState NextState => Parent.Green;  }
+    class State_Green  : State_Timed { protected override float Duration => 5f; protected override IState NextState => Parent.Yellow; }
+    class State_Yellow : State_Timed { protected override float Duration => 1f; protected override IState NextState => Parent.Red;    }
 }
 ```
 
 Five things to notice:
 
 - `State_Timed` is an **abstract reusable state**. It implements `ITick` once; the three concrete colors only differ in duration and next state. This kind of composition is the main reason every state class is generic over `TActor` and `TParent`.
-- Leaves reach siblings as `parent.Green`, `parent.Yellow`, etc. The `parent` property is typed `State_Root` because of the `SimpleState<TrafficLight, State_Root>` declaration.
+- Leaves reach siblings as `Parent.Green`, `Parent.Yellow`, etc. The `Parent` property is typed `State_Root` because of the `State<TrafficLight, State_Root>` declaration.
 - `TransitTo(NextState)` bubbles up to `State_Root`, which finds the target in its children list and switches.
 - `Tick` is implemented once on `State_Timed`. Each color inherits the behavior — no per-color duplication.
-- `Initialize(this)` sets the actor, so anywhere inside a state `actor.SomeMethod()` calls the owning `TrafficLight`.
+- `Initialize(this)` sets the actor, so anywhere inside a state `Actor.SomeMethod()` calls the owning `TrafficLight`.
 
 ### Step 2 — power off
 
@@ -170,12 +169,12 @@ A real traffic light can be powered off. Wrap the cycle in a higher-level state.
 interface IPowerSwitch : IStateBase { void SetPower(bool on); }
 static readonly Handler<IPowerSwitch, bool> msg_power = (receiver, on) => receiver.SetPower(on);
 
-class State_Root : HierarchicalState<TrafficLight>, IState, IPowerSwitch
+class State_Root : State<TrafficLight>, IState, IPowerSwitch
 {
     public readonly State_Off       Off       = new();
     public readonly State_Operating Operating = new();
 
-    protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Off;
         subStates.Add(Off);
@@ -185,18 +184,18 @@ class State_Root : HierarchicalState<TrafficLight>, IState, IPowerSwitch
     void IPowerSwitch.SetPower(bool on) => TransitTo(on ? (IState)Operating : Off);
 }
 
-class State_Off : SimpleState<TrafficLight, State_Root>, IState
+class State_Off : State<TrafficLight, State_Root>, IState
 {
     void IState.Enter() { /* darken bulbs */ }
 }
 
-class State_Operating : HierarchicalState<TrafficLight, State_Root>, IState
+class State_Operating : State<TrafficLight, State_Root>, IState
 {
     public readonly State_Red    Red    = new();
     public readonly State_Green  Green  = new();
     public readonly State_Yellow Yellow = new();
 
-    protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Red;
         subStates.Add(Red);
@@ -209,56 +208,23 @@ class State_Operating : HierarchicalState<TrafficLight, State_Root>, IState
 The colors (`State_Red` / `State_Green` / `State_Yellow`) now live under `State_Operating`. Their declared parent therefore changes from `State_Root` to `State_Operating`:
 
 ```csharp
-abstract class State_Timed : SimpleState<TrafficLight, State_Operating>, IState, ITick { ... }
+abstract class State_Timed : State<TrafficLight, State_Operating>, IState, ITick { ... }
 ```
 
 The structure now looks like:
 
 ```
-State_Root   (Hierarchical)
-├── State_Off            (Simple)
-└── State_Operating  (Hierarchical)
-    ├── State_Red        (Simple)
-    ├── State_Green      (Simple)
-    └── State_Yellow     (Simple)
+State_Root
+├── State_Off
+└── State_Operating
+    ├── State_Red
+    ├── State_Green
+    └── State_Yellow
 ```
 
 `msg_power` with `on = false` bubbles from whichever color is active, past `State_Operating` (which doesn't implement `IPowerSwitch`), up to `State_Root`, which transitions to `Off`. Exiting `Operating` automatically exits whichever color was active first.
 
-### Step 3 — a pedestrian light in parallel
-
-A pedestrian crossing has its own light that runs *alongside* the vehicle light, not under it. That's an **orthogonal** composition.
-
-```csharp
-class State_Crossing : OrthogonalState<TrafficLight>, IState
-{
-    public readonly State_Root    Vehicles    = new();
-    public readonly State_PedestrianLight Pedestrians = new();
-
-    protected override void OnInitialize(List<IState> subStates)
-    {
-        subStates.Add(Vehicles);
-        subStates.Add(Pedestrians);
-    }
-}
-```
-
-Update the constructor to use the new root:
-
-```csharp
-_machine = new StateMachine("TrafficLight", new State_Crossing());
-```
-
-Notice the signature difference between the two composite kinds:
-
-- `HierarchicalState.OnInitialize(out IState entrySubState, List<IStateBase> subStates)` — exactly one entry child.
-- `OrthogonalState.OnInitialize(List<IState> subStates)` — every child runs.
-
-Messages sent to the machine reach **both** branches independently. Transitions inside `Vehicles` do not affect `Pedestrians`, and vice versa. Each branch has its own active leaf and is dispatched to separately.
-
-`State_PedestrianLight` is just another hierarchical sub-tree, with its own `Walk` / `Wait` children — same shape as `State_Operating`.
-
-### Step 4 — a button press message
+### Step 3 — a button press message
 
 Pedestrians press a button to request a faster cycle. Define the message:
 
@@ -275,7 +241,7 @@ Only `Green` should react — when pressed during a green, clip the remaining ti
 class State_Green : State_Timed, IPedestrianButton
 {
     protected override float Duration => 5f;
-    protected override IState NextState => parent.Yellow;
+    protected override IState NextState => Parent.Yellow;
 
     void IPedestrianButton.OnPress()
     {
@@ -287,14 +253,15 @@ class State_Green : State_Timed, IPedestrianButton
 
 What happens at dispatch time:
 
-1. `SendMessage` walks up from the active leaf of each orthogonal branch.
-2. In the vehicle branch, if `Green` is active, its handler fires and the message is consumed.
+1. `SendMessage` walks up from the active leaf of the machine.
+2. If `Green` is active, its handler fires and the message is consumed.
 3. If `Red` or `Yellow` is active, no state in the chain implements `IPedestrianButton` — the press is silently ignored, which is exactly what we want.
-4. In the pedestrian branch, the same walk happens independently; if any pedestrian state implements `IPedestrianButton` it can react too.
 
 If you want a state to handle a message *and* let it keep bubbling, call `PropagateMessage()` at the end of the handler.
 
-### Step 5 — passing arguments into a transition
+> **Parallel concurrent state — composition, not orthogonal.** If you wanted a pedestrian-crossing light running *alongside* the vehicle light, you'd compose two state machines: the outer actor owns two `StateMachine` instances (vehicle + pedestrian) and routes events to whichever cares. See the Door and Lever sample.
+
+### Step 4 — passing arguments into a transition
 
 An emergency override should jump immediately to Yellow with an extra-long fade — say, 10 seconds — before returning to Red. We need a way to enter `Yellow` with a custom duration.
 
@@ -323,7 +290,7 @@ Define the emergency message and route it through `State_Operating`:
 interface IEmergency : IStateBase { void OnEmergency(); }
 static readonly Handler<IEmergency> msg_emergency = receiver => receiver.OnEmergency();
 
-class State_Operating : HierarchicalState<TrafficLight, State_Root>, IState, IEmergency
+class State_Operating : State<TrafficLight, State_Root>, IState, IEmergency
 {
     public readonly State_Red    Red    = new();
     public readonly State_Green  Green  = new();
@@ -360,13 +327,13 @@ public static class CommonMessages
     public static readonly Handler<ITick, float> msg_tick = (receiver, dt) =>
     {
         receiver.Tick(dt);
-        receiver.state.PropagateMessage();   // ticks broadcast by default
+        receiver.State.PropagateMessage();   // ticks broadcast by default
     };
 
     public static readonly Handler<IUpdate, float> msg_update = (receiver, dt) =>
     {
         receiver.Update(dt);
-        receiver.state.PropagateMessage();
+        receiver.State.PropagateMessage();
     };
 }
 ```
@@ -379,9 +346,9 @@ A timer that just transitions when it runs out is a five-line state. A *real* ti
 
 ```csharp
 public abstract class State_Wait<TActor, TParent>
-    : SimpleState<TActor, TParent>, IState<float>, ITick
+    : State<TActor, TParent>, IState<float>, ITick
     where TActor  : class
-    where TParent : IParentState
+    where TParent : State
 {
     protected float _timeLeft;
 
@@ -422,9 +389,9 @@ Generic state classes inherit cleanly across actors. Define behavior once, param
 ```csharp
 public interface IHasWalker { Walker Walker { get; } }
 
-public abstract class State_WalkOnPath<TActor, TParent> : SimpleState<TActor, TParent>, IState
+public abstract class State_WalkOnPath<TActor, TParent> : State<TActor, TParent>, IState
     where TActor  : class, IHasWalker
-    where TParent : IParentState
+    where TParent : State
 {
     protected abstract Vector2 GetNextStep();
     void IState.Enter() { /* set initial destination, etc. */ }
@@ -443,7 +410,7 @@ The `TParent` generic parameter is what makes `parent.SomeSibling` strongly type
 ### Re-enter the same state with new args
 
 ```csharp
-class State_Dialogue : SimpleState<Controller, State_Game>, IState<Dialogue>
+class State_Dialogue : State<Controller, State_Game>, IState<Dialogue>
 {
     Dialogue _dialogue;
     void IState<Dialogue>.Enter(Dialogue dialogue) => _dialogue = dialogue;
@@ -478,7 +445,7 @@ A message handler in one machine can call `otherController.GoToScene(...)`, whic
 State lifetime is a natural scope for event subscriptions:
 
 ```csharp
-class State_World : HierarchicalState<Controller, State_Game>, IState
+class State_World : State<Controller, State_Game>, IState
 {
     protected override void OnEnter()
     {
@@ -502,7 +469,7 @@ When the machine moves out of `State_World` for *any* reason — including a par
 A state can be a transition target for multiple distinct payloads:
 
 ```csharp
-class State_Teleporting : SimpleState<Walker, State_Enabled>,
+class State_Teleporting : State<Walker, State_Enabled>,
     IState<(Vector3 destination, bool checkPath)>,
     IState<(Area area,            bool checkPath)>
 {
@@ -518,7 +485,7 @@ Each `TransitTo(state, ...)` resolves to the matching `Enter` overload at compil
 When which child to enter depends on runtime conditions, leave `entrySubState` null and decide in `Enter`:
 
 ```csharp
-class State_Root : HierarchicalState<GameRoot>, IState
+class State_Root : State<GameRoot>, IState
 {
     readonly State_MainMenu _mainMenu = new();
     readonly State_Ingame   _ingame   = new();
@@ -540,7 +507,7 @@ class State_Root : HierarchicalState<GameRoot>, IState
 Subscribe in `OnEnter` and forward the callback as a message. This keeps the heavy work inside the state machine's dispatch model rather than running synchronously inside a foreign event:
 
 ```csharp
-class State_Root : HierarchicalState<Controller>, IState, IGameStateChanged
+class State_Root : State<Controller>, IState, IGameStateChanged
 {
     static readonly Handler<IGameStateChanged, World.State> msg_gameStateChanged =
         (receiver, newState) => receiver.OnGameStateChanged(newState);
@@ -591,10 +558,10 @@ machine.Shutdown();
 
 | Class | Use for |
 |---|---|
-| `SimpleState<TActor>` | Leaf state, parented under any parent. |
-| `SimpleState<TActor, TParent>` | Leaf state with a strongly-typed `parent`. |
-| `HierarchicalState<TActor>` | Composite state with one active child. |
-| `HierarchicalState<TActor, TParent>` | Same, with a typed parent. |
+| `State<TActor>` | Leaf state, parented under any parent. |
+| `State<TActor, TParent>` | Leaf state with a strongly-typed `parent`. |
+| `State<TActor>` | Composite state with one active child. |
+| `State<TActor, TParent>` | Same, with a typed parent. |
 | `OrthogonalState<TActor>` | Composite state with all children active in parallel. |
 | `OrthogonalState<TActor, TParent>` | Same, with a typed parent. |
 
@@ -670,7 +637,7 @@ The common case — transitioning to a sibling under the same hierarchical paren
 ### `LogFlags`
 
 ```csharp
-machine.logFlags = StateMachine.LogFlags.EnterExit;
+machine.Logging = StateMachine.LogFlags.EnterExit;
 ```
 
 `EnterExit` writes a line for every state entered and exited. More flags may be added in future versions.

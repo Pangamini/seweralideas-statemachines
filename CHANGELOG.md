@@ -1,4 +1,99 @@
 # Changelog
+## [0.4.0]
+
+Major refactor. The state-class hierarchy collapses to a single `State<TActor>` / `State<TActor, TParent>`; orthogonal regions are removed; public properties get PascalCased; the active-state set is now always a linear path from leaf to root; queries pick up a Func-handler overload that returns a value.
+
+### Added
+- `SendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — Func-handler overloads that capture a return value from the first active state implementing `TReceiver`. Generics infer from the handler.
+- `TrySendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — Try-shaped (no throw, no side effects on failure).
+- `State.ChildCount` / `State.GetChild(int)` made public — useful for inspectors and tooling.
+
+### Changed
+- **Single state class.** `SimpleState<>`, `SimpleState<,>`, `HierarchicalState<>`, `HierarchicalState<,>` collapse into `State<TActor>` and `State<TActor, TParent>`. User states inherit one of these directly. No more decision about "do I have children".
+- `OnInitialize(out IState, List<IStateBase>)` (the old hierarchical-children declaration) is now `DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)`. It's `virtual` with a default of "no children", so leaves don't have to override anything.
+- `OnInitialize()` (no-args, post-tree-setup) keeps the same name; runs *after* the entire sub-tree has been built so it can safely reference children.
+- Public properties renamed to PascalCase:
+  - `IStateBase.state` → `IStateBase.State`
+  - `State.name` → `State.Name`
+  - `State.stateMachine` → `State.StateMachine`
+  - `State<TActor, TParent>.actor` → `State<TActor, TParent>.Actor`
+  - `State<TActor, TParent>.parent` → `State<TActor, TParent>.Parent`
+  - `StateMachine.actor` → `StateMachine.Actor`
+  - `StateMachine.logFlags` (public mutable field) → `StateMachine.Logging` (property; the `LogFlags` enum type kept its name, so the property got a distinct one)
+- `where TParent : IParentState` constraint becomes `where TParent : State`.
+- Transition resolution: pointer compare (`target.parentState == this`) replaces the `Contains(_childStates, target)` array scan.
+- `State.ReceiveMessage` is now non-virtual — a single concrete implementation walks the active chain via parent links for all states.
+- `Walk()` and `Visit()` internals simplify: depth-first traversal with no per-orthogonal-branch fan-out. `Walk(WalkMode.ActiveOnly)` is a linear chain walk.
+- Door and Lever sample rewritten as composition — the actor owns two `StateMachine` instances (`_leverMachine`, `_doorMachine`) and routes events to the relevant one. Lever's button-handlers fan out to the door machine explicitly.
+
+### Removed
+- `OrthogonalState<TActor>` and `OrthogonalState<TActor, TParent>` — use composition (an outer state owning multiple `StateMachine` instances, fanning out messages explicitly) for parallel concurrent state.
+- `OrthogonalBranch` (internal).
+- `IParentState` marker interface — no longer needed (every `State` can be a parent).
+- `IHasTopState` internal interface — only `StateMachine` tracks the top state now.
+- `SimpleState<TActor>`, `SimpleState<TActor, TParent>`, `HierarchicalState<TActor>`, `HierarchicalState<TActor, TParent>` — merged into `State<>`.
+- `State._hasTopState` field — states reference `StateMachine` directly.
+- `State.WalkChildCount`, `State.WalkChild`, `State.WalkIsChildActive` virtuals — replaced by direct field access via `ChildCount` / `GetChild` / `ActiveSubState`.
+- `Contains` static helper — no longer used after the transition-resolution simplification.
+
+### Migration notes from 0.3.x
+
+**State class renames** — project-wide find/replace:
+
+- `SimpleState<` → `State<`
+- `HierarchicalState<` → `State<`
+- `OrthogonalState<...>` — rewrite as composition (see below).
+- `IParentState` — drop. If used as a `TParent` constraint, change to `State`.
+
+**Property renames** — also project-wide:
+
+- `.actor` → `.Actor`
+- `.parent` → `.Parent`
+- `.stateMachine` → `.StateMachine`
+- `.name` → `.Name`   *(on a `State`; Unity's `GameObject.name` is unaffected)*
+- `.state` → `.State`   *(on `IStateBase`; this is the "downcast to State" property)*
+- `.logFlags` → `.Logging`
+
+**`OnInitialize` for composite states** is now `DeclareChildren`:
+
+```csharp
+// Before
+protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates) { ... }
+
+// After
+protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates) { ... }
+```
+
+The no-args `OnInitialize()` keeps the same signature.
+
+**Orthogonal regions** are gone. Migrate to composition: an outer state owns multiple `StateMachine` instances, fans out messages explicitly. The Door and Lever sample shows the new pattern.
+
+```csharp
+// Before
+class State_Root : OrthogonalState<Actor>, IState
+{
+    protected override void OnInitialize(List<IState> subStates)
+    {
+        subStates.Add(new State_LeverRoot());
+        subStates.Add(new State_DoorRoot());
+    }
+}
+
+// After: actor owns two state machines, routes messages explicitly
+class Actor : MonoBehaviour
+{
+    private readonly StateMachine _lever = new("Lever", new State_LeverRoot());
+    private readonly StateMachine _door  = new("Door",  new State_DoorRoot());
+
+    void OnEnable()  { _lever.Initialize(this); _door.Initialize(this); }
+    void OnDisable() { _lever.Shutdown();       _door.Shutdown(); }
+
+    public void OnClick() => _lever.SendMessage(msg_onClick);   // route to whichever machine cares
+}
+```
+
+For "fan a message out to every machine" patterns, write the fan-out explicitly at the call site — it's three lines per message and unambiguous.
+
 ## [0.3.0]
 ### Added
 - `StateMachine.Walk(WalkMode)` — allocation-aware struct enumerator over the state tree.

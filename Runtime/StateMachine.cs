@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 #if UNITY_5_3_OR_NEWER && DEBUG
 #define UNITY_PROFILING
@@ -14,13 +14,7 @@ using Debug = System.Diagnostics.Debug;
 
 namespace SeweralIdeas.StateMachines
 {
-    internal interface IHasTopState
-    {
-        State? topState { get; set; }
-        IState rootState { get; }
-    }
-
-    public class StateMachine : IHasTopState
+    public class StateMachine
     {
         public enum InitState : byte
         {
@@ -36,7 +30,7 @@ namespace SeweralIdeas.StateMachines
             void TransitTo<TArg>(IState<TArg> state, TArg arg);
         }
 
-        public object? actor { get; private set; }
+        public object? Actor { get; private set; }
 
         private readonly IState _rootState;
         private readonly Action<string> _debugLog;
@@ -47,18 +41,11 @@ namespace SeweralIdeas.StateMachines
         private bool _receivingMessages;
 
         internal bool _messageConsumed;
-        public LogFlags logFlags = 0;
+        public LogFlags Logging { get; set; } = 0;
         public readonly string Name;
 
-        State? IHasTopState.topState
-        {
-            get => _topState;
-            set => _topState = value!;
-        }
-
-        IState IHasTopState.rootState => _rootState;
-
-        internal IState Root => _rootState;
+        internal State RootState => _rootState.State;
+        internal void SetTopState(State state) => _topState = state;
 
         /// <summary>
         /// Walk the state machine's tree. Returns an allocation-aware struct enumerable;
@@ -71,41 +58,48 @@ namespace SeweralIdeas.StateMachines
         /// <summary>
         /// Recursively visit the tree, calling <see cref="IStateVisitor.BeginState"/> before
         /// each state's children and <see cref="IStateVisitor.EndState"/> after. Use this when
-        /// you need explicit boundaries per state — for example, to recreate the original
-        /// nested-box IMGUI layout where each composite state's children sit inside its box.
+        /// you need explicit boundaries per state — for example, to recreate the nested-box
+        /// IMGUI layout where each composite state's children sit inside its box.
         /// No-op if the machine is not initialized.
         /// </summary>
         public void Visit(IStateVisitor visitor, WalkMode mode = WalkMode.AllStates)
         {
             if (visitor == null) throw new ArgumentNullException(nameof(visitor));
             if (!IsInitialized) return;
-            VisitState(_rootState.state, depth: 0, isActive: true, visitor, mode);
+            VisitState(_rootState.State, depth: 0, isActive: true, visitor, mode);
         }
 
         private static void VisitState(State state, int depth, bool isActive, IStateVisitor visitor, WalkMode mode)
         {
-            int childCount = state.WalkChildCount(mode);
-            bool hasChildren = childCount > 0;
+            bool hasChildren = mode == WalkMode.AllStates
+                ? state.ChildCount > 0
+                : state.ActiveSubState != null;
 
             visitor.BeginState(state, depth, isActive, hasChildren);
 
-            for (int i = 0; i < childCount; i++)
+            if (mode == WalkMode.AllStates)
             {
-                State child = state.WalkChild(i, mode);
-                bool childActive = isActive && state.WalkIsChildActive(child);
-                VisitState(child, depth + 1, childActive, visitor, mode);
+                int count = state.ChildCount;
+                for (int i = 0; i < count; i++)
+                {
+                    var child = state.GetChild(i);
+                    bool childActive = isActive && ReferenceEquals(state.ActiveSubState, child);
+                    VisitState(child, depth + 1, childActive, visitor, mode);
+                }
+            }
+            else
+            {
+                var active = state.ActiveSubState;
+                if (active != null)
+                    VisitState(active, depth + 1, isActive, visitor, mode);
             }
 
             visitor.EndState(state, depth, isActive, hasChildren);
         }
 
-        public void WriteLine(string text)
-        {
-            _debugLog(text);
-        }
+        public void WriteLine(string text) => _debugLog(text);
 
         public bool IsInitialized => InitializationState is InitState.Initialized or InitState.ShuttingDown;
-
         public InitState InitializationState { get; private set; }
 
         [Flags]
@@ -125,14 +119,12 @@ namespace SeweralIdeas.StateMachines
         public void Initialize(object actor)
         {
             if (InitializationState != InitState.Offline)
-            {
                 throw new InvalidOperationException("StateMachine already initialized");
-            }
 
             InitializationState = InitState.Initializing;
             WriteLine($"{Name} initializing");
 
-            this.actor = actor;
+            Actor = actor;
             _messageQueue.Clear();
             _transitionQueue.Clear();
 
@@ -141,20 +133,19 @@ namespace SeweralIdeas.StateMachines
                 var context = new InitContext()
                 {
                     stateMachine = this,
-                    iStates = new List<IState>(),
-                    iBaseStates = new List<IStateBase>()
+                    subStates = new List<IStateBase>()
                 };
 
-                _rootState.state.Initialize(context, this);
+                _rootState.State.Initialize(context);
             }
             catch(Exception initializationException)
             {
                 Exception? shutdownException = null;
                 try
                 {
-                    _rootState.state.Shutdown();
+                    _rootState.State.Shutdown();
                 }
-                catch( Exception ex )
+                catch(Exception ex)
                 {
                     shutdownException = ex;
                 }
@@ -162,14 +153,12 @@ namespace SeweralIdeas.StateMachines
                 {
                     _messageQueue.Clear();
                     _transitionQueue.Clear();
-                    this.actor = null;
+                    Actor = null;
                     InitializationState = InitState.Offline;
                 }
 
                 if (shutdownException != null)
-                {
                     throw new AggregateException("Initialization and shutdown both failed.", initializationException, shutdownException);
-                }
                 throw;
             }
             InitializationState = InitState.Initialized;
@@ -177,9 +166,7 @@ namespace SeweralIdeas.StateMachines
             try
             {
                 if (!StartMessageReceiving())
-                {
                     throw new InvalidProgramException("This should not ever happen..?");
-                }
 
                 _messageConsumed = false;
                 _rootState.StateEnter();
@@ -188,7 +175,6 @@ namespace SeweralIdeas.StateMachines
             {
                 StopMessageReceiving();
                 HandleMessagesInternal();
-
             }
         }
 
@@ -200,11 +186,11 @@ namespace SeweralIdeas.StateMachines
             WriteLine($"{Name} shutting down");
 
             _messageConsumed = false;
-            _rootState.state.Exit();
+            _rootState.State.Exit();
 
             try
             {
-                _rootState.state.Shutdown();
+                _rootState.State.Shutdown();
             }
             finally
             {
@@ -216,6 +202,7 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
+        // === Transitions ===
 
         private static readonly Handler<ITransition, IState> MsgTransition = (receiver, dest) =>
         {
@@ -234,7 +221,7 @@ namespace SeweralIdeas.StateMachines
         internal void TransitTo(IState destination)
         {
             InitGuard();
-            Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
+            Debug.Assert(destination?.State?.StateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
             var handler = MsgTransition;
 
             if (StartMessageReceiving())
@@ -242,8 +229,8 @@ namespace SeweralIdeas.StateMachines
                 try
                 {
                     _messageConsumed = false;
-                    _topState.ReceiveMessage(handler, destination);
-                    WarnUnclaimedTransition(destination?.state?.name);
+                    _topState.ReceiveMessage(handler, destination!);
+                    WarnUnclaimedTransition(destination?.State?.Name);
                 }
                 finally
                 {
@@ -253,7 +240,7 @@ namespace SeweralIdeas.StateMachines
             }
             else
             {
-                _transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination));
+                _transitionQueue.Enqueue(Message<ITransition, IState>.Create(handler, destination!));
                 HandleMessagesInternal();
             }
         }
@@ -261,7 +248,7 @@ namespace SeweralIdeas.StateMachines
         internal void TransitTo<TArg>(IState<TArg> destination, TArg arg)
         {
             InitGuard();
-            Debug.Assert(destination?.state?.stateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
+            Debug.Assert(destination?.State?.StateMachine == this, $"Destination state {destination} is not a part of the StateMachine {Name}");
             var handler = TransitionHandler<TArg>.MsgTransition;
 
             if (StartMessageReceiving())
@@ -269,8 +256,8 @@ namespace SeweralIdeas.StateMachines
                 try
                 {
                     _messageConsumed = false;
-                    _topState.ReceiveMessage(handler, (destination, arg));
-                    WarnUnclaimedTransition(destination?.state?.name);
+                    _topState.ReceiveMessage(handler, (destination!, arg));
+                    WarnUnclaimedTransition(destination?.State?.Name);
                 }
                 finally
                 {
@@ -281,7 +268,7 @@ namespace SeweralIdeas.StateMachines
             else
             {
                 _transitionQueue.Enqueue(
-                    Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination, arg)));
+                    Message<ITransition, (IState<TArg>, TArg)>.Create(handler, (destination!, arg)));
                 HandleMessagesInternal();
             }
         }
@@ -291,10 +278,12 @@ namespace SeweralIdeas.StateMachines
         {
             if (!_messageConsumed)
             {
-                WriteLine($"{Name}: transition to {destinationName ?? "<null>"} was not claimed by any HierarchicalState on the active chain. " +
-                          "The target is not reachable from the currently active state — verify it is a sibling under a common hierarchical parent.");
+                WriteLine($"{Name}: transition to {destinationName ?? "<null>"} was not claimed by any state on the active chain. " +
+                          "The target is not reachable from the currently active state — verify it is a child of some state on the active chain.");
             }
         }
+
+        // === Message send ===
 
         internal void SendMessage(Message message)
         {
@@ -303,11 +292,11 @@ namespace SeweralIdeas.StateMachines
         }
 
         /// <summary>
-        /// Send a message to the active state chain. Fire-and-forget: returns nothing.
-        /// If called from inside a handler (nested), the message is queued and dispatched
-        /// after the outer dispatch frame completes. Use <see cref="SendMessageNow{TReceiver}(Handler{TReceiver})"/>
-        /// or <see cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/> when you need
-        /// to know whether the message was consumed.
+        /// Send a message to the active state chain. Fire-and-forget. If called from inside a
+        /// handler (nested), the message is queued and dispatched after the outer dispatch
+        /// frame completes. Use <see cref="SendMessageNow{TReceiver}(Handler{TReceiver})"/> or
+        /// the Func-handler overloads when you need to know whether the message was consumed
+        /// (or want a return value).
         /// </summary>
         public void SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
         {
@@ -338,13 +327,13 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
+        // === SendMessageNow / TrySendMessageNow — void handlers ===
+
         /// <summary>
         /// Try to send a message synchronously. Returns <c>true</c> if dispatch happened in this
         /// call, in which case <paramref name="consumed"/> reflects whether any state consumed the
-        /// message. Returns <c>false</c> when called from inside a handler (nested dispatch is not
-        /// supported) — in that case the message is <b>not</b> sent at all; <paramref name="consumed"/>
-        /// is set to <c>false</c>. Callers who want a queued fallback should follow with
-        /// <see cref="SendMessage{TReceiver}(Handler{TReceiver})"/> explicitly.
+        /// message. Returns <c>false</c> when called from inside a handler — in that case the
+        /// message is <b>not</b> sent at all and <paramref name="consumed"/> is set to <c>false</c>.
         /// </summary>
         public bool TrySendMessageNow<TReceiver>(Handler<TReceiver> handler, out bool consumed) where TReceiver : class
         {
@@ -373,12 +362,10 @@ namespace SeweralIdeas.StateMachines
 
         /// <summary>
         /// Send a message synchronously and return whether any state consumed it. Throws
-        /// <see cref="InvalidOperationException"/> if called from inside a handler — at that point
-        /// the message is not sent. Equivalent to calling <see cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/>
-        /// and throwing when it returns <c>false</c>.
+        /// <see cref="InvalidOperationException"/> if called from inside a handler — message is not
+        /// sent in that case. Equivalent to <see cref="TrySendMessageNow{TReceiver}(Handler{TReceiver}, out bool)"/>
+        /// plus throw-on-failure.
         /// </summary>
-        /// <returns><c>true</c> if a state's handler consumed the message without calling
-        /// <see cref="State.PropagateMessage"/>; <c>false</c> otherwise.</returns>
         public bool SendMessageNow<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
         {
             if (!TrySendMessageNow(handler, out bool consumed))
@@ -400,11 +387,69 @@ namespace SeweralIdeas.StateMachines
             return consumed;
         }
 
-        // Shared synchronous dispatch core. Precondition: not currently receiving (caller's
-        // responsibility). Returns whether the dispatched message was consumed (i.e. some state's
-        // handler ran without calling PropagateMessage). The return is captured before the finally's
-        // queue-drain runs, so it reflects this message specifically, not any side-effects the
-        // bubble queued.
+        // === SendMessageNow / TrySendMessageNow — Func handlers (return a value) ===
+
+        /// <summary>
+        /// Try to send a message synchronously where the handler returns a value. Returns
+        /// <c>true</c> if a state consumed the message and produced a result (in which case
+        /// <paramref name="result"/> holds it). Returns <c>false</c> if no state consumed it
+        /// <b>or</b> if called from inside a handler — message is not sent in the nested case.
+        /// </summary>
+        public bool TrySendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+            {
+                result = default!;
+                return false;
+            }
+            return DispatchSyncCore(handler, out result);
+        }
+
+        /// <inheritdoc cref="TrySendMessageNow{TReceiver, TResult}(Func{TReceiver, TResult}, out TResult)"/>
+        public bool TrySendMessageNow<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+            {
+                result = default!;
+                return false;
+            }
+            return DispatchSyncCore(handler, arg, out result);
+        }
+
+        /// <summary>
+        /// Send a message synchronously where the handler returns a value. Returns the
+        /// consumption bool and the result via <paramref name="result"/>. Throws
+        /// <see cref="InvalidOperationException"/> if called from inside a handler — message
+        /// is not sent in that case.
+        /// </summary>
+        public bool SendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+                throw new InvalidOperationException(
+                    "SendMessageNow cannot be called from inside a handler (nested dispatch). " +
+                    "Use TrySendMessageNow to handle this case without throwing.");
+            return DispatchSyncCore(handler, out result);
+        }
+
+        /// <inheritdoc cref="SendMessageNow{TReceiver, TResult}(Func{TReceiver, TResult}, out TResult)"/>
+        public bool SendMessageNow<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        {
+            InitGuard();
+            if (_receivingMessages)
+                throw new InvalidOperationException(
+                    "SendMessageNow cannot be called from inside a handler (nested dispatch). " +
+                    "Use TrySendMessageNow to handle this case without throwing.");
+            return DispatchSyncCore(handler, arg, out result);
+        }
+
+        // === Synchronous dispatch cores ===
+        // Preconditions: not currently receiving (caller's responsibility). Each core sets the
+        // _receivingMessages flag, dispatches inline, drains any queue side-effects in finally,
+        // and returns the captured consumption flag.
+
         private bool DispatchSyncCore<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
         {
             StartMessageReceiving();
@@ -449,13 +494,55 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
+        private bool DispatchSyncCore<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        {
+            StartMessageReceiving();
+            try
+            {
+                _messageConsumed = false;
+#if UNITY_PROFILING
+                Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
+#endif
+                _topState.ReceiveMessage(handler, out result);
+#if UNITY_PROFILING
+                Profiler.EndSample();
+#endif
+                return _messageConsumed;
+            }
+            finally
+            {
+                StopMessageReceiving();
+                HandleMessagesInternal();
+            }
+        }
+
+        private bool DispatchSyncCore<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        {
+            StartMessageReceiving();
+            try
+            {
+                _messageConsumed = false;
+#if UNITY_PROFILING
+                Profiler.BeginSample(ReceiverTypeNameCache.GetName(typeof(TReceiver)));
+#endif
+                _topState.ReceiveMessage(handler, arg, out result);
+#if UNITY_PROFILING
+                Profiler.EndSample();
+#endif
+                return _messageConsumed;
+            }
+            finally
+            {
+                StopMessageReceiving();
+                HandleMessagesInternal();
+            }
+        }
+
         private void HandleMessagesInternal()
         {
             if (!StartMessageReceiving())
-            {
                 return;
-            }
-            
+
             try
             {
                 while (InitializationState == InitState.Initialized)
@@ -502,7 +589,6 @@ namespace SeweralIdeas.StateMachines
             {
                 StopMessageReceiving();
             }
-            
         }
 
         private void InitGuard()
@@ -518,10 +604,7 @@ namespace SeweralIdeas.StateMachines
             return wasNotReceiving;
         }
 
-        private void StopMessageReceiving()
-        {
-            _receivingMessages = false;
-        }
+        private void StopMessageReceiving() => _receivingMessages = false;
 
         public class InitializationException : Exception
         {
@@ -530,11 +613,14 @@ namespace SeweralIdeas.StateMachines
             public InitializationException(string message, Exception innerException) : base(message, innerException) { }
         }
 
+        // Fields are always populated via object-initializer at construction; default(InitContext)
+        // is never used. Suppress the uninitialized-field warning.
+#pragma warning disable CS8618
         internal struct InitContext
         {
             public StateMachine stateMachine;
-            public List<IState> iStates;
-            public List<IStateBase> iBaseStates;
+            public List<IStateBase> subStates;
         }
+#pragma warning restore CS8618
     }
 }
