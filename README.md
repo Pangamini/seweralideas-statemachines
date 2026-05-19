@@ -27,9 +27,10 @@ public class Game
     // The first parameter is the receiver (the state implementing ITick).
     static readonly Handler<ITick, float> msg_tick = (receiver, dt) => receiver.Tick(dt);
 
-    readonly StateMachine _machine = new("Game", new State_Root());
+    readonly StateMachine _machine;
 
-    public void Start()          => _machine.Initialize(this);
+    public Game()                { _machine = new StateMachine("Game", this, new State_Root()); }
+    public void Start()          => _machine.Initialize();
     public void Tick(float dt)   => _machine.SendMessage(msg_tick, dt);
     public void Stop()           => _machine.Shutdown();
 
@@ -78,12 +79,13 @@ There is no NuGet package. The runtime is a small set of files under `Runtime/`.
 
 | Concept | What it is |
 |---|---|
-| **`StateMachine`** | The container. Holds the root state, an `Actor`, and a message queue. You `Initialize` it, send messages, and `Shutdown`. |
-| **`Actor`** | Any object you pass to `Initialize`. States typed `State<TActor>` / `State<TActor, TParent>` expose it as a strongly-typed `Actor` property. It is the bridge between the machine and the world it controls. |
+| **`StateMachine`** | The container. Built once with `(name, actor, rootState)` — the constructor walks the tree and binds the topology + actor in one pass. Repeated `Initialize` / `Shutdown` cycles are cheap (no rebuild). |
+| **`Actor`** | The object you pass to the `StateMachine` constructor. States typed `State<TActor>` / `State<TActor, TParent>` expose it as a strongly-typed `Actor` property. It is the bridge between the machine and the world it controls. |
 | **Root state** | The state at the top of the hierarchy. There is exactly one. |
 | **`State<TActor>` / `State<TActor, TParent>`** | The single state base class. A leaf is a state that doesn't declare children; a composite declares children via `DeclareChildren` and has exactly one active at a time. The `TParent` overload exposes a strongly-typed `Parent` property for `Parent.SomeSibling` access. |
 | **Receiver interface** | An interface *you* define, e.g. `interface ITick { void Tick(float dt); }`. Any state can implement zero or more of these. |
-| **`Handler<TReceiver>` / `Handler<TReceiver, TArg>`** | A delegate that dispatches one specific receiver interface. Conventionally a `static readonly` field per message. |
+| **`Handler<TReceiver>` / `Handler<TReceiver, TArg>`** | A delegate that dispatches one specific receiver interface (no return value). Conventionally a `static readonly` field per message. |
+| **`FuncHandler<TReceiver, TResult>` / `FuncHandler<TReceiver, TArg, TResult>`** | The return-value counterpart, paired with `SendMessageNow` / `TrySendMessageNow` for synchronous queries. |
 | **Message bubbling** | `machine.SendMessage(handler, arg)` walks from the active leaf upward through its parents. The first state that implements `TReceiver` consumes the message. The state can opt to keep it bubbling by calling `PropagateMessage()`. |
 | **Transition** | `TransitTo(targetState)` (or `TransitTo(target, arg)`). The transition bubbles up like a message until a state whose direct child is the target claims it; that parent exits its current child and enters the target. |
 | **Parallel concurrent state** | Compose explicitly: an outer state owns multiple `StateMachine` instances, fans out messages to whichever sub-machines care. The Door and Lever sample shows the pattern. |
@@ -109,10 +111,10 @@ public class TrafficLight
 
     public TrafficLight()
     {
-        _machine = new StateMachine("TrafficLight", new State_Root());
+        _machine = new StateMachine("TrafficLight", this, new State_Root());
     }
 
-    public void Start()        => _machine.Initialize(this);
+    public void Start()        => _machine.Initialize();
     public void Stop()         => _machine.Shutdown();
     public void Tick(float dt) => _machine.SendMessage(msg_tick, dt);
 
@@ -159,7 +161,7 @@ Five things to notice:
 - Leaves reach siblings as `Parent.Green`, `Parent.Yellow`, etc. The `Parent` property is typed `State_Root` because of the `State<TrafficLight, State_Root>` declaration.
 - `TransitTo(NextState)` bubbles up to `State_Root`, which finds the target in its children list and switches.
 - `Tick` is implemented once on `State_Timed`. Each color inherits the behavior — no per-color duplication.
-- `Initialize(this)` sets the actor, so anywhere inside a state `Actor.SomeMethod()` calls the owning `TrafficLight`.
+- The `StateMachine` constructor receives `this` as the actor, so anywhere inside a state `Actor.SomeMethod()` calls the owning `TrafficLight`.
 
 ### Step 2 — power off
 
@@ -273,7 +275,7 @@ class State_Yellow : State_Timed, IState<float>
     void IState<float>.Enter(float duration) => _timeLeft = duration;
 
     protected override float  Duration  => 1f;             // used when entered with no arg
-    protected override IState NextState => parent.Red;
+    protected override IState NextState => Parent.Red;
 }
 ```
 
@@ -296,7 +298,7 @@ class State_Operating : State<TrafficLight, State_Root>, IState, IEmergency
     public readonly State_Green  Green  = new();
     public readonly State_Yellow Yellow = new();
 
-    protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Red;
         subStates.Add(Red);
@@ -310,7 +312,7 @@ class State_Operating : State<TrafficLight, State_Root>, IState, IEmergency
 
 Wherever the cycle is — Red, Green, or Yellow — `_machine.SendMessage(msg_emergency)` bubbles up to `State_Operating`, which jumps to a 10-second Yellow.
 
-That's the full toolkit: leaf states, hierarchical composition, orthogonal composition, message bubbling with optional propagation, and transitions with typed arguments. The patterns section below covers idioms for scaling these up.
+That's the full toolkit: leaf states, hierarchical composition, message bubbling with optional propagation, and transitions with typed arguments. For parallel concurrent state, compose multiple `StateMachine` instances side-by-side — see the Door and Lever sample. The patterns section below covers idioms for scaling these up.
 
 ## Patterns cookbook
 
@@ -373,11 +375,11 @@ Concrete use — one line per behavior, all the timer mechanics inherited:
 ```csharp
 class State_Reloading : State_Wait<Player, State_Combat>
 {
-    protected override void OnElapsed()   => TransitTo(parent.Idle);
+    protected override void OnElapsed()   => TransitTo(Parent.Idle);
 }
 
 // Enter it with a duration:
-TransitTo(parent.Reloading, 2.5f);
+TransitTo(Parent.Reloading, 2.5f);
 ```
 
 A subclass can also add its own receiver interfaces — `State_Reloading` could implement `IOnHit` to abort early — and the timer behavior keeps working underneath. The library ships no built-in wait state because it has no time concept: every project's tick source and clock are different. The 25 lines above transplant cleanly into any of them.
@@ -405,7 +407,7 @@ class State_WalkToTree : State_WalkOnPath<Lumberjack, State_DoingFine>
 }
 ```
 
-The `TParent` generic parameter is what makes `parent.SomeSibling` strongly typed inside the abstract base.
+The `TParent` generic parameter is what makes `Parent.SomeSibling` strongly typed inside the abstract base.
 
 ### Re-enter the same state with new args
 
@@ -432,7 +434,9 @@ public class GameController
 {
     interface IGoToScene { void GoToScene(string name); }
     static readonly Handler<IGoToScene, string> msg_go = (receiver, name) => receiver.GoToScene(name);
-    readonly StateMachine _machine = new("GameController", new State_Root());
+    readonly StateMachine _machine;
+
+    public GameController() { _machine = new StateMachine("GameController", this, new State_Root()); }
 
     public void GoToScene(string name) => _machine.SendMessage(msg_go, name);
 }
@@ -450,13 +454,13 @@ class State_World : State<Controller, State_Game>, IState
     protected override void OnEnter()
     {
         base.OnEnter();
-        actor.GameSystem.ActiveSceneObjectChanged += OnActiveSceneObjectChanged;
-        OnActiveSceneObjectChanged(actor.GameSystem.ActiveSceneObject);
+        Actor.GameSystem.ActiveSceneObjectChanged += OnActiveSceneObjectChanged;
+        OnActiveSceneObjectChanged(Actor.GameSystem.ActiveSceneObject);
     }
 
     protected override void OnExit()
     {
-        actor.GameSystem.ActiveSceneObjectChanged -= OnActiveSceneObjectChanged;
+        Actor.GameSystem.ActiveSceneObjectChanged -= OnActiveSceneObjectChanged;
         base.OnExit();
     }
 }
@@ -490,7 +494,7 @@ class State_Root : State<GameRoot>, IState
     readonly State_MainMenu _mainMenu = new();
     readonly State_Ingame   _ingame   = new();
 
-    protected override void OnInitialize(out IState entrySubState, List<IStateBase> subStates)
+    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = null;   // decided in Enter()
         subStates.Add(_mainMenu);
@@ -498,7 +502,7 @@ class State_Root : State<GameRoot>, IState
     }
 
     void IState.Enter()
-        => TransitTo(actor.HasActiveSave ? (IState)_ingame : _mainMenu);
+        => TransitTo(Actor.HasActiveSave ? (IState)_ingame : _mainMenu);
 }
 ```
 
@@ -515,17 +519,17 @@ class State_Root : State<Controller>, IState, IGameStateChanged
     protected override void OnEnter()
     {
         base.OnEnter();
-        actor.World.GameState.Changed += OnGameStateChanged;
+        Actor.World.GameState.Changed += OnGameStateChanged;
     }
 
     protected override void OnExit()
     {
-        actor.World.GameState.Changed -= OnGameStateChanged;
+        Actor.World.GameState.Changed -= OnGameStateChanged;
         base.OnExit();
     }
 
     void OnGameStateChanged(World.State newState)
-        => stateMachine.SendMessage(msg_gameStateChanged, newState);
+        => StateMachine.SendMessage(msg_gameStateChanged, newState);
 
     void IGameStateChanged.OnGameStateChanged(World.State newState) { /* react */ }
 }
@@ -536,45 +540,43 @@ class State_Root : State<Controller>, IState, IGameStateChanged
 ### Lifecycle
 
 ```csharp
-var machine = new StateMachine(name, rootState, debugLog: null);
-machine.Initialize(actor);
+var machine = new StateMachine(name, actor, rootState, debugLog: null);
+machine.Initialize();
 machine.SendMessage(handler, arg);
 machine.Shutdown();
+machine.Initialize();   // cheap — topology and actor survive Shutdown
 ```
 
 | Member | Behavior |
 |---|---|
-| `new StateMachine(string name, IState rootState, Action<string> debugLog = null)` | Constructs the machine. `debugLog` receives diagnostic strings (defaults to `Console.WriteLine`). |
-| `Initialize(object actor)` | Sets the actor, traverses the state tree calling each state's initializer, then enters the root. Must be called when `InitializationState == Offline`. If initialization throws, the machine attempts to shut down the partially-built tree and rethrows. If shutdown also throws, both are wrapped in an `AggregateException`. |
-| `Shutdown()` | Exits the active states bottom-up and resets the tree. Requires `IsInitialized`. |
+| `new StateMachine(string name, object actor, IState rootState, Action<string> debugLog = null)` | Constructs the machine and immediately builds the state tree: calls `DeclareChildren` on every state, wires parent/child links, binds each `State<TActor>._actor`. `debugLog` receives diagnostic strings (defaults to `Console.WriteLine`). |
+| `Initialize()` | Runs `OnInitialize` bottom-up across the tree, then enters the root. Must be called when `InitializationState == Offline`. May be called again after each `Shutdown` — topology and actor persist, so re-init is cheap. If `OnInitialize` throws, the machine attempts to shut down the partial tree (calling `OnShutdown` on every state) and rethrows; user `OnShutdown` should tolerate that. |
+| `Shutdown()` | Exits the active states from the leaf upward, then runs `OnShutdown` bottom-up. Topology and actor are **not** cleared — call `Initialize` again to restart. Requires `IsInitialized`. |
 | `IsInitialized` | True while `InitializationState` is `Initialized` or `ShuttingDown`. |
 | `InitializationState` | One of `Offline`, `Initializing`, `Initialized`, `ShuttingDown`. |
 | `Name` | The display name passed to the constructor. |
-| `actor` | The object passed to `Initialize`. |
-| `logFlags` | Bit field of `LogFlags`. Set to `LogFlags.EnterExit` to log every state enter/exit via `debugLog`. |
+| `Actor` | The object passed to the constructor (`public readonly object`). |
+| `Logging` | Bit field of `LogFlags`. Set to `LogFlags.EnterExit` to log every state enter/exit via `debugLog`. |
 | `WriteLine(string)` | Convenience that calls the configured `debugLog`. |
+
+> **Field initializer caveat.** Because the actor is a constructor argument, you can't construct a `StateMachine` in a field initializer when the actor is `this` (`this` isn't available in field initializers). Move the construction into a constructor or `Awake` / `OnEnable`.
 
 ### State base classes
 
 | Class | Use for |
 |---|---|
-| `State<TActor>` | Leaf state, parented under any parent. |
-| `State<TActor, TParent>` | Leaf state with a strongly-typed `parent`. |
-| `State<TActor>` | Composite state with one active child. |
-| `State<TActor, TParent>` | Same, with a typed parent. |
-| `OrthogonalState<TActor>` | Composite state with all children active in parallel. |
-| `OrthogonalState<TActor, TParent>` | Same, with a typed parent. |
+| `State<TActor>` | Any state, leaf or composite. The actor is `class`-constrained. |
+| `State<TActor, TParent>` | Same, plus a strongly-typed `Parent` property — useful for `Parent.SomeSibling` access from child states. `TParent` must derive from `State`. |
 
-`TActor` is the actor class (`class`-constrained). `TParent` must implement `IParentState`. All `HierarchicalState` and `OrthogonalState` instances are themselves `IParentState`.
+There is **one** state class for both leaves and composites. A leaf is simply a state that doesn't override `DeclareChildren`; a composite overrides it to declare its children and (optionally) an entry sub-state. For parallel concurrent state, compose multiple `StateMachine` instances at the actor level — see the Door and Lever sample.
 
 ### State interfaces
 
 | Interface | Purpose |
 |---|---|
-| `IStateBase` | Marker base for any state. Useful as a constraint when you want any state, not a specific entry shape. |
+| `IStateBase` | Marker base for any state. Useful as a constraint when you want "any state," not a specific entry shape. |
 | `IState` | State that can be transitioned to without an argument. Declares `Enter()` with a default empty body — concrete states only need to define it when they have entry-time work to do. |
 | `IState<TArg>` | State that can be transitioned to with an argument. Defines `Enter(TArg arg)`. A state can implement both, and can implement multiple `IState<T>` for different `T`. |
-| `IParentState` | Marker for composite states. Implemented by `HierarchicalState` and `OrthogonalState`. |
 
 A state typically implements `IState` (or `IState<T>`) **and** any number of custom receiver interfaces.
 
@@ -582,13 +584,12 @@ A state typically implements `IState` (or `IState<T>`) **and** any number of cus
 
 | Hook | When |
 |---|---|
+| `DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)` (virtual) | Called once during `StateMachine` construction. Override on composite states to add children and (optionally) set the default entry sub-state. Leaves don't override anything. Set `entrySubState = null` to decide entry at runtime (e.g. from inside `IState.Enter`). |
+| `OnInitialize()` (virtual) | Called bottom-up on every `Initialize()` call, after the entire sub-tree's `OnInitialize` has run. Paired with `OnShutdown`. Use for setup that should be active only while the machine is running. |
+| `OnShutdown()` (virtual) | Called bottom-up on every `Shutdown()` call, after the root has been exited. Reverse of `OnInitialize`. |
 | `IState.Enter()` / `IState<TArg>.Enter(TArg)` | Called every time the state becomes active. Receives the transition argument, if any. |
 | `OnEnter()` (virtual) | Called after `Enter`. Use it for setup unrelated to the entry argument. |
-| `OnExit()` (virtual) | Called when the state is left. |
-| `OnInitialize()` (on `SimpleState`, virtual) | Called once during machine `Initialize`, before any state is entered. Use it for one-time setup that depends on `actor`. |
-| `OnInitialize(out IState entrySubState, List<IStateBase> subStates)` (on `HierarchicalState`, abstract) | Declare child states and the default entry. Set `entrySubState = null` to decide entry at runtime. |
-| `OnInitialize(List<IState> subStates)` (on `OrthogonalState`, abstract) | Declare the parallel branches. |
-| `OnShutdown()` (virtual) | Called during machine shutdown. Reverse of `OnInitialize`. |
+| `OnExit()` (virtual) | Called when the state is left. Reverse of `OnEnter`. |
 
 ### Messages and dispatch
 
@@ -611,9 +612,29 @@ What happens:
 2. The walk goes upward through parents, stopping at the root.
 3. The first state that implements `IHit` has its handler invoked. After that the message is *consumed*.
 4. A handler can call `PropagateMessage()` to mark the message un-consumed; bubbling then continues past this state.
-5. In an `OrthogonalState`, each branch receives the message independently. The orthogonal state itself only receives the message if no branch consumed it.
 
 If `SendMessage` is called while a previous dispatch is still in progress (for example, from inside a state's handler), the new message is **queued** and drained after the current one returns. Transitions are queued in a separate priority queue and are always processed before regular messages.
+
+#### Synchronous dispatch and queries
+
+`SendMessage` is fire-and-forget — there's no way to know whether the message was consumed, and nested sends queue. The `SendMessageNow` / `TrySendMessageNow` family fills the gap:
+
+```csharp
+// Synchronous void dispatch — returns whether some state consumed the message.
+bool consumed = machine.SendMessageNow(msg_hit, 10);
+
+// Try-shaped: returns false (no throw) if called from inside a handler.
+machine.TrySendMessageNow(msg_hit, 10, out bool consumed);
+
+// Query with a return value, via FuncHandler:
+interface IGetHealth : IStateBase { int GetHealth(); }
+static readonly FuncHandler<IGetHealth, int> msg_getHealth = receiver => receiver.GetHealth();
+
+if (machine.SendMessageNow(msg_getHealth, out int hp))
+    Console.WriteLine($"HP = {hp}");
+```
+
+The `Now` variants throw if called from inside a handler (nested synchronous dispatch is not allowed); the `Try` variants return `false` instead.
 
 ### Transitions
 
@@ -629,10 +650,10 @@ TransitTo(someState, arg);
 A transition behaves almost identically to a regular message:
 
 1. It bubbles up from the current top state.
-2. The first `HierarchicalState` whose child list contains the target claims it. That parent exits its current child and enters the target.
-3. If no parent contains the target, the transition propagates past the root and has no effect.
+2. The first ancestor whose direct child is the target claims it. That parent exits its current child and enters the target.
+3. If no ancestor contains the target, the transition propagates past the root and has no effect (a DEBUG-only warning is logged).
 
-The common case — transitioning to a sibling under the same hierarchical parent — is the simplest, and the most heavily optimized.
+The common case — transitioning to a sibling under the same parent — is the simplest, and the most heavily optimized.
 
 ### `LogFlags`
 
@@ -644,7 +665,7 @@ machine.Logging = StateMachine.LogFlags.EnterExit;
 
 ### Exceptions
 
-`StateMachine.InitializationException` is thrown when the state graph declared in `OnInitialize` is invalid — typically because a child state is `null` or already has a parent (i.e. the same instance was added twice). The exception is thrown from inside `Initialize`; the machine then attempts to shut down the partial tree and re-throws.
+`StateMachine.InitializationException` is thrown when the state graph declared in `DeclareChildren` is invalid — typically because a child state is `null` or already has a parent (i.e. the same instance was added twice). The exception is thrown from inside the `StateMachine` constructor's build pass.
 
 ## ConcurrentStateMachine
 
@@ -660,12 +681,13 @@ machine.Logging = StateMachine.LogFlags.EnterExit;
 ```csharp
 var concurrent = new ConcurrentStateMachine(
     name:                 "Network",
+    actor:                this,
     rootState:            new State_Root(),
     debugLog:             Console.WriteLine,
     onMessagesAvailable:  () => mainThread.Wake(),
     logFlags:             StateMachine.LogFlags.None);
 
-concurrent.Initialize(actor);
+concurrent.Initialize();
 
 // from any thread:
 concurrent.SendMessage(msg_packetReceived, packet);
@@ -701,7 +723,7 @@ class NetworkBridge
     public NetworkBridge()
     {
         _machine = new ConcurrentStateMachine(
-            "Network", new State_Root(), System.Console.WriteLine,
+            "Network", this, new State_Root(), System.Console.WriteLine,
             onMessagesAvailable: () => _wake.Set());
     }
 
@@ -711,7 +733,7 @@ class NetworkBridge
     // Owner thread loop.
     public void Run(CancellationToken ct)
     {
-        _machine.Initialize(this);
+        _machine.Initialize();
         try
         {
             while (!ct.IsCancellationRequested)
@@ -731,7 +753,7 @@ class NetworkBridge
 
 ## Samples
 
-The package ships with a **Door and Lever** sample (Unity). Import it from Package Manager → Samples. It demonstrates an orthogonal root with two parallel hierarchical branches, transitions with arguments, and message propagation for shared per-frame ticks.
+The package ships with a **Door and Lever** sample (Unity). Import it from Package Manager → Samples. It demonstrates parallel concurrent state as composition (the actor owns two `StateMachine` instances and fans out events to whichever cares), transitions with arguments, and message propagation for shared per-frame ticks.
 
 ## License
 

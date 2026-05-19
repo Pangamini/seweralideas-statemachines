@@ -111,15 +111,29 @@ namespace SeweralIdeas.StateMachines
 
         public StateMachine(string name, object actor, IState rootState, Action<string>? debugLog = null)
         {
+            if (name is null) throw new ArgumentNullException(nameof(name));
+            if (actor is null) throw new ArgumentNullException(nameof(actor));
+            if (rootState is null) throw new ArgumentNullException(nameof(rootState));
+
             _debugLog = debugLog ?? Console.WriteLine;
             Name = name;
             _rootState = rootState;
             Actor = actor;
-            
+
             List<IStateBase> stateList = new();
             rootState.State.Build(new(this, stateList));
         }
 
+        /// <summary>
+        /// Run <c>OnInitialize</c> bottom-up across the tree and enter the root state. May be
+        /// called again after each <see cref="Shutdown"/> — topology and <see cref="Actor"/> are
+        /// set once at construction and survive shutdown, so re-initialization is cheap.
+        /// </summary>
+        /// <remarks>
+        /// If a state's <c>OnInitialize</c> throws, the partial sub-tree is unwound by calling
+        /// <c>OnShutdown</c> on every state — including states whose <c>OnInitialize</c> never
+        /// ran. User <c>OnShutdown</c> implementations should tolerate that.
+        /// </remarks>
         public void Initialize()
         {
             if (InitializationState != InitState.Offline)
@@ -291,7 +305,7 @@ namespace SeweralIdeas.StateMachines
         /// Send a message to the active state chain. Fire-and-forget. If called from inside a
         /// handler (nested), the message is queued and dispatched after the outer dispatch
         /// frame completes. Use <see cref="SendMessageNow{TReceiver}(Handler{TReceiver})"/> or
-        /// the Func-handler overloads when you need to know whether the message was consumed
+        /// the FuncHandler overloads when you need to know whether the message was consumed
         /// (or want a return value).
         /// </summary>
         public void SendMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
@@ -383,7 +397,7 @@ namespace SeweralIdeas.StateMachines
             return consumed;
         }
 
-        // === SendMessageNow / TrySendMessageNow — Func handlers (return a value) ===
+        // === SendMessageNow / TrySendMessageNow — FuncHandler (return a value) ===
 
         /// <summary>
         /// Try to send a message synchronously where the handler returns a value. Returns
@@ -391,7 +405,7 @@ namespace SeweralIdeas.StateMachines
         /// <paramref name="result"/> holds it). Returns <c>false</c> if no state consumed it
         /// <b>or</b> if called from inside a handler — message is not sent in the nested case.
         /// </summary>
-        public bool TrySendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        public bool TrySendMessageNow<TReceiver, TResult>(FuncHandler<TReceiver, TResult> handler, out TResult result) where TReceiver : class
         {
             InitGuard();
             if (_receivingMessages)
@@ -402,8 +416,8 @@ namespace SeweralIdeas.StateMachines
             return DispatchSyncCore(handler, out result);
         }
 
-        /// <inheritdoc cref="TrySendMessageNow{TReceiver, TResult}(Func{TReceiver, TResult}, out TResult)"/>
-        public bool TrySendMessageNow<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        /// <inheritdoc cref="TrySendMessageNow{TReceiver, TResult}(FuncHandler{TReceiver, TResult}, out TResult)"/>
+        public bool TrySendMessageNow<TReceiver, TArg, TResult>(FuncHandler<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
         {
             InitGuard();
             if (_receivingMessages)
@@ -420,7 +434,7 @@ namespace SeweralIdeas.StateMachines
         /// <see cref="InvalidOperationException"/> if called from inside a handler — message
         /// is not sent in that case.
         /// </summary>
-        public bool SendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        public bool SendMessageNow<TReceiver, TResult>(FuncHandler<TReceiver, TResult> handler, out TResult result) where TReceiver : class
         {
             InitGuard();
             if (_receivingMessages)
@@ -430,8 +444,8 @@ namespace SeweralIdeas.StateMachines
             return DispatchSyncCore(handler, out result);
         }
 
-        /// <inheritdoc cref="SendMessageNow{TReceiver, TResult}(Func{TReceiver, TResult}, out TResult)"/>
-        public bool SendMessageNow<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        /// <inheritdoc cref="SendMessageNow{TReceiver, TResult}(FuncHandler{TReceiver, TResult}, out TResult)"/>
+        public bool SendMessageNow<TReceiver, TArg, TResult>(FuncHandler<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
         {
             InitGuard();
             if (_receivingMessages)
@@ -490,7 +504,7 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
-        private bool DispatchSyncCore<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        private bool DispatchSyncCore<TReceiver, TResult>(FuncHandler<TReceiver, TResult> handler, out TResult result) where TReceiver : class
         {
             StartMessageReceiving();
             try
@@ -512,7 +526,7 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
-        private bool DispatchSyncCore<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        private bool DispatchSyncCore<TReceiver, TArg, TResult>(FuncHandler<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
         {
             StartMessageReceiving();
             try

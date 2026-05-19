@@ -1,17 +1,24 @@
 # Changelog
 ## [0.4.0]
 
-Major refactor. The state-class hierarchy collapses to a single `State<TActor>` / `State<TActor, TParent>`; orthogonal regions are removed; public properties get PascalCased; the active-state set is now always a linear path from leaf to root; queries pick up a Func-handler overload that returns a value.
+Major refactor. Three big shifts:
+
+1. **Single state class.** `SimpleState<>`, `HierarchicalState<>`, and `OrthogonalState<>` collapse into one `State<TActor>` / `State<TActor, TParent>`. Composites declare children via a virtual `DeclareChildren`; leaves don't override anything. Orthogonal regions are gone — model parallel concurrent state by composing multiple `StateMachine` instances.
+2. **Topology and actor are set once at construction.** `StateMachine`'s constructor takes the actor and walks the root tree immediately — builds all parent/child links, sets each state's `StateMachine` reference, and binds each typed `_actor`. `Initialize()` / `Shutdown()` become parameterless lifecycle methods that just enter/exit the root and run `OnInitialize` / `OnShutdown` bottom-up. Re-initialization across a `Shutdown` is cheap — no allocations, no `DeclareChildren` replay.
+3. **Public surface modernized.** Properties get PascalCased; the active-state set is now always a linear leaf-to-root path; queries pick up `FuncHandler` overloads that return a value.
 
 ### Added
-- `SendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — Func-handler overloads that capture a return value from the first active state implementing `TReceiver`. Generics infer from the handler.
-- `TrySendMessageNow<TReceiver, TResult>(Func<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — Try-shaped (no throw, no side effects on failure).
+- `FuncHandler<TReceiver, TResult>` / `FuncHandler<TReceiver, TArg, TResult>` delegates — mirror `Handler<>` for return-value dispatch.
+- `SendMessageNow<TReceiver, TResult>(FuncHandler<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — query overloads that capture a return value from the first active state implementing `TReceiver`. Generics infer from the handler.
+- `TrySendMessageNow<TReceiver, TResult>(FuncHandler<TReceiver, TResult>, out TResult)` and the `<TArg, TResult>` variant — Try-shaped (no throw, no side effects on failure).
 - `State.ChildCount` / `State.GetChild(int)` made public — useful for inspectors and tooling.
 
 ### Changed
 - **Single state class.** `SimpleState<>`, `SimpleState<,>`, `HierarchicalState<>`, `HierarchicalState<,>` collapse into `State<TActor>` and `State<TActor, TParent>`. User states inherit one of these directly. No more decision about "do I have children".
-- `OnInitialize(out IState, List<IStateBase>)` (the old hierarchical-children declaration) is now `DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)`. It's `virtual` with a default of "no children", so leaves don't have to override anything.
-- `OnInitialize()` (no-args, post-tree-setup) keeps the same name; runs *after* the entire sub-tree has been built so it can safely reference children.
+- **`StateMachine` ctor takes the actor; `Initialize` / `Shutdown` are parameterless.** Topology and actor are bound once at construction (an internal `Build` phase walks the root tree, calls `DeclareChildren` on each state, sets parent/child links, and binds each typed `_actor`). `Initialize()` / `Shutdown()` are repeatable lifecycle methods — call them as many times as you like; topology and actor survive across cycles.
+- `OnInitialize(out IState, List<IStateBase>)` (the old hierarchical-children declaration) is now `DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)`. It's `virtual` with a default of "no children", so leaves don't have to override anything. Now called from `StateMachine`'s ctor (during Build), not from `Initialize`.
+- `OnInitialize()` (no-args, post-build hook) keeps the same name. It now runs once per `Initialize()` call, bottom-up — paired with `OnShutdown()` which runs bottom-up on `Shutdown()`. Use these for setup that should be active only while the machine is running (per-entry work still belongs in `OnEnter` / `OnExit`).
+- `StateMachine.Actor` is now a non-nullable `public readonly object` field set in the ctor; previously a mutable `object?` property set from `Initialize(object)`.
 - Public properties renamed to PascalCase:
   - `IStateBase.state` → `IStateBase.State`
   - `State.name` → `State.Name`
@@ -64,7 +71,26 @@ protected override void OnInitialize(out IState entrySubState, List<IStateBase> 
 protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates) { ... }
 ```
 
-The no-args `OnInitialize()` keeps the same signature.
+The no-args `OnInitialize()` keeps the same signature, but is now paired with `OnShutdown()` and runs once per `Initialize()` call (not just once per machine lifetime).
+
+**Construction and lifecycle** — actor moves to the ctor; `Initialize` / `Shutdown` are parameterless:
+
+```csharp
+// Before
+var machine = new StateMachine("name", new State_Root());
+machine.Initialize(this);   // actor passed here
+// ...
+machine.Shutdown();
+
+// After
+var machine = new StateMachine("name", this, new State_Root());   // actor passed here
+machine.Initialize();
+// ...
+machine.Shutdown();
+machine.Initialize();   // cheap — topology and actor survive Shutdown
+```
+
+Because the actor is now a ctor argument, MonoBehaviours that previously held the machine as a `readonly` field initializer need to move construction into a constructor or `Awake` — `this` isn't available in field initializers.
 
 **Orthogonal regions** are gone. Migrate to composition: an outer state owns multiple `StateMachine` instances, fans out messages explicitly. The Door and Lever sample shows the new pattern.
 
@@ -82,11 +108,17 @@ class State_Root : OrthogonalState<Actor>, IState
 // After: actor owns two state machines, routes messages explicitly
 class Actor : MonoBehaviour
 {
-    private readonly StateMachine _lever = new("Lever", new State_LeverRoot());
-    private readonly StateMachine _door  = new("Door",  new State_DoorRoot());
+    private readonly StateMachine _lever;
+    private readonly StateMachine _door;
 
-    void OnEnable()  { _lever.Initialize(this); _door.Initialize(this); }
-    void OnDisable() { _lever.Shutdown();       _door.Shutdown(); }
+    protected Actor()
+    {
+        _lever = new("Lever", this, new State_LeverRoot());
+        _door  = new("Door",  this, new State_DoorRoot());
+    }
+
+    void OnEnable()  { _lever.Initialize(); _door.Initialize(); }
+    void OnDisable() { _lever.Shutdown();   _door.Shutdown(); }
 
     public void OnClick() => _lever.SendMessage(msg_onClick);   // route to whichever machine cares
 }

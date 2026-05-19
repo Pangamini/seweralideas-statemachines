@@ -65,10 +65,10 @@ namespace SeweralIdeas.StateMachines
 
         internal State() { }
 
-        // Parent link. Null for the root state; set during init for every other state.
+        // Parent link. Null for the root state; set during Build for every other state.
         protected State? ParentState { get; private set; }
 
-        // The state machine this state belongs to. null!-initialized; set in Initialize and cleared in Shutdown.
+        // The state machine this state belongs to. Set during Build (StateMachine's ctor); persists for the lifetime of the state.
         public StateMachine StateMachine { get; private set; } = null!;
 
         public string Name => GetType().Name;
@@ -78,12 +78,12 @@ namespace SeweralIdeas.StateMachines
 
         protected void PropagateMessage() => StateMachine._messageConsumed = false;
 
-        private State?   _activeSubState;
-        private IState?  _entrySubState;
-        private State[]? _childStates;
+        private State?  _activeSubState;
+        private IState? _entrySubState;
+        private State[] _childStates = Array.Empty<State>();
 
-        public int ChildCount => _childStates?.Length ?? 0;
-        public State GetChild(int index) => _childStates![index];
+        public int ChildCount => _childStates.Length;
+        public State GetChild(int index) => _childStates[index];
         internal State? ActiveSubState => _activeSubState;
 
         /// <summary>
@@ -94,16 +94,20 @@ namespace SeweralIdeas.StateMachines
         /// Set to <c>null</c> to defer the entry decision to runtime — typically by calling
         /// <c>TransitTo</c> from inside <see cref="IState.Enter"/>.</param>
         /// <param name="subStates">Add each child state to this list. The list is reused across
-        /// the init pass — only add to it, do not assume it's empty.</param>
+        /// the build pass and is cleared before each invocation, so it is guaranteed empty on entry.</param>
         protected virtual void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = null;
         }
 
         /// <summary>
-        /// Override for setup that runs after the entire sub-tree has been initialized. Safe to
-        /// reference <c>Actor</c>, sibling states, child states, etc. Called bottom-up — child
-        /// states' <c>OnInitialize</c> runs before their parent's.
+        /// Override for setup that runs once per <see cref="StateMachine.Initialize"/> call,
+        /// after the entire sub-tree's <c>OnInitialize</c> has run. Safe to reference
+        /// <c>Actor</c>, sibling states, child states, etc. Called bottom-up — child states'
+        /// <c>OnInitialize</c> runs before their parent's. Paired with <see cref="OnShutdown"/>,
+        /// which runs bottom-up at <see cref="StateMachine.Shutdown"/>; use these for setup that
+        /// should be active only while the machine is running (per-entry setup belongs in
+        /// <see cref="OnEnter"/> / <see cref="OnExit"/>).
         /// </summary>
         protected virtual void OnInitialize() { }
         protected virtual void OnEnter() { }
@@ -145,11 +149,11 @@ namespace SeweralIdeas.StateMachines
                 for (int i = 0; i < ctx.StateList.Count; i++)
                 {
                     var child = ctx.StateList[i].State;
-                    
+
                     if (child.ParentState != null)
                         throw new StateMachine.InitializationException(
                             $"Cannot add state {child.GetType()} as a child of {GetType()}; it already has a parent.");
-                    
+
                     child.ParentState = this;
                     _childStates[i] = child;
                 }
@@ -158,29 +162,22 @@ namespace SeweralIdeas.StateMachines
                 foreach (var child in _childStates)
                     child.Build(ctx);
             }
-            else
-            {
-                _childStates = Array.Empty<State>();
-            }
         }
-        
+
         internal void Initialize()
         {
-            foreach (var child in _childStates!)
+            foreach (var child in _childStates)
                 child.Initialize();
-            
+
             OnInitialize();
         }
 
         internal virtual void Shutdown()
         {
-            if (_childStates != null)
-            {
-                foreach (var child in _childStates)
-                    child.Shutdown();
-            }
+            foreach (var child in _childStates)
+                child.Shutdown();
             OnShutdown();
-            
+
             _activeSubState = null;
         }
 
@@ -289,7 +286,7 @@ namespace SeweralIdeas.StateMachines
             }
         }
 
-        internal void ReceiveMessage<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
+        internal void ReceiveMessage<TReceiver, TResult>(FuncHandler<TReceiver, TResult> handler, out TResult result) where TReceiver : class
         {
             var iter = this;
             var sm = StateMachine;
@@ -316,7 +313,7 @@ namespace SeweralIdeas.StateMachines
             result = default!;
         }
 
-        internal void ReceiveMessage<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
+        internal void ReceiveMessage<TReceiver, TArg, TResult>(FuncHandler<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
         {
             var iter = this;
             var sm = StateMachine;
@@ -358,7 +355,7 @@ namespace SeweralIdeas.StateMachines
     /// </summary>
     public abstract class State<TActor, TParent> : State where TActor : class where TParent : State
     {
-        private TActor? _actor = null!;
+        private TActor _actor = null!;
 
         public TActor Actor
         {
@@ -376,14 +373,14 @@ namespace SeweralIdeas.StateMachines
         {
             if (((object?)StateMachine) is null)
                 throw new InvalidOperationException(
-                    $"Cannot access Actor on state {GetType().Name}: state machine is not initialized " +
-                    "(either Initialize has not been called, or Shutdown has run). " +
-                    "States must not access Actor from their constructors — use OnInitialize instead.");
+                    $"Cannot access Actor on state {GetType().Name}: this state has not been added " +
+                    "to a StateMachine yet. States must not access Actor from their constructors — " +
+                    "use OnInitialize instead.");
         }
-        
+
         internal override void Build(BuildContext ctx)
         {
-            _actor = ctx.Machine.Actor as TActor;
+            _actor = (TActor)ctx.Machine.Actor;
             base.Build(ctx);
         }
     }
