@@ -12,7 +12,7 @@
   "samples": [
     {
       "displayName": "Door and Lever",
-      "description": "Contains a sample StateMachine with orthogonal and hierarchical states. Also includes a reusable in-game IMGUI overlay built on IStateVisitor.",
+      "description": "Two parallel StateMachine instances composed at the actor level (lever + door). Also includes a reusable in-game IMGUI overlay built on IStateVisitor.",
       "path": "Samples~/DoorAndLever"
     },
     {
