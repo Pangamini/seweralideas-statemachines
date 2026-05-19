@@ -201,7 +201,7 @@ namespace SeweralIdeas.StateMachines.Editor
             {
                 var prev = GUI.color;
                 GUI.color = isActive ? ActiveColor : InactiveColor;
-                GUILayout.BeginVertical(state.name, GUI.skin.window, ExpandHeight);
+                GUILayout.BeginVertical(state.Name, GUI.skin.window, ExpandHeight);
                 GUI.color = prev;
 
                 if (hasChildren)

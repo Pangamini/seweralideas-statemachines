@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 #if UNITY_5_3_OR_NEWER && DEBUG
 #define UNITY_PROFILING
@@ -18,17 +18,15 @@ namespace SeweralIdeas.StateMachines
     /// "any state" without committing to a specific entry shape (<see cref="IState"/> /
     /// <see cref="IState{TArg}"/>).
     /// </summary>
-    public interface IStateBase { State state { get; } };
+    public interface IStateBase { State State { get; } }
 
     /// <summary>
     /// A state that can be the target of a transition without an argument
     /// (<c>TransitTo(someState)</c>). <see cref="Enter"/> has a default empty body via a
-    /// default-interface-method, so concrete states only need to define it when they have
-    /// entry-time work to do; an explicit empty <c>void IState.Enter() { }</c> stub is
-    /// unnecessary. A state may implement both <see cref="IState"/> and one or more
-    /// <see cref="IState{TArg}"/> if it is reachable via either kind of transition.
+    /// C# default-interface-method, so concrete states only need to define it when they have
+    /// entry-time work to do.
     /// </summary>
-    public interface IState : IStateBase { void Enter() {} };
+    public interface IState : IStateBase { void Enter() {} }
 
     /// <summary>
     /// A state that can be the target of a transition with a typed argument
@@ -37,539 +35,335 @@ namespace SeweralIdeas.StateMachines
     /// multiple <see cref="IState{TArg}"/> with different <typeparamref name="TArg"/> types
     /// to accept different transition payloads.
     /// </summary>
-    /// <typeparam name="TArg">Type of the transition argument</typeparam>
-    public interface IState<in TArg> : IStateBase { void Enter(TArg arg); };
-
-    /// <summary>
-    /// Marker implemented by composite states (<see cref="HierarchicalState{TActor}"/> and
-    /// <see cref="OrthogonalState{TActor}"/>). Used as the <c>TParent</c> generic constraint
-    /// on <c>SimpleState&lt;TActor, TParent&gt;</c> and friends, giving child states a
-    /// strongly-typed <c>parent</c> reference.
-    /// </summary>
-    public interface IParentState : IStateBase { }
+    public interface IState<in TArg> : IStateBase { void Enter(TArg arg); }
 
     public static class StateExtensions
     {
         internal static void StateEnter(this IState state)
         {
-            state.state.EnterBegin();
+            state.State.EnterBegin();
             state.Enter();
-            state.state.EnterEnd();
+            state.State.EnterEnd();
         }
 
         internal static void StateEnter<TArg>(this IState<TArg> state, TArg arg)
         {
-            state.state.EnterBegin();
+            state.State.EnterBegin();
             state.Enter(arg);
-            state.state.EnterEnd();
+            state.State.EnterEnd();
         }
     }
 
-    public abstract class State : IStateBase
+    /// <summary>
+    /// Non-generic abstract base for every state in the machine. User states inherit from
+    /// <see cref="State{TActor}"/> or <see cref="State{TActor, TParent}"/>; this base hosts
+    /// the shared infrastructure (parent link, message dispatch, lifecycle hooks).
+    /// </summary>
+    public abstract class State : IStateBase, StateMachine.ITransition
     {
-        State IStateBase.state => this;
+        State IStateBase.State => this;
 
         internal State() { }
 
-        protected static bool Contains<T>(T[] states, T state) where T : class
+        // Parent link. Null for the root state; set during init for every other state.
+        protected State? ParentState { get; private set; }
+
+        // The state machine this state belongs to. null!-initialized; set in Initialize and cleared in Shutdown.
+        public StateMachine StateMachine { get; private set; } = null!;
+
+        public string Name => GetType().Name;
+
+        protected void TransitTo(IState destination) => StateMachine.TransitTo(destination);
+        protected void TransitTo<TArg>(IState<TArg> destination, TArg arg) => StateMachine.TransitTo(destination, arg);
+
+        protected void PropagateMessage() => StateMachine._messageConsumed = false;
+
+        private State?   _activeSubState;
+        private IState?  _entrySubState;
+        private State[]? _childStates;
+
+        public int ChildCount => _childStates?.Length ?? 0;
+        public State GetChild(int index) => _childStates![index];
+        internal State? ActiveSubState => _activeSubState;
+
+        /// <summary>
+        /// Override to declare child states for a composite state. Leaves should not override
+        /// this method (the default declares no children).
+        /// </summary>
+        /// <param name="entrySubState">The child to enter by default when this state is entered.
+        /// Set to <c>null</c> to defer the entry decision to runtime — typically by calling
+        /// <c>TransitTo</c> from inside <see cref="IState.Enter"/>.</param>
+        /// <param name="subStates">Add each child state to this list. The list is reused across
+        /// the init pass — only add to it, do not assume it's empty.</param>
+        protected virtual void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
         {
-            for (int i = 0; i < states.Length; ++i)
+            entrySubState = null;
+        }
+
+        /// <summary>
+        /// Override for setup that runs after the entire sub-tree has been initialized. Safe to
+        /// reference <c>Actor</c>, sibling states, child states, etc. Called bottom-up — child
+        /// states' <c>OnInitialize</c> runs before their parent's.
+        /// </summary>
+        protected virtual void OnInitialize() { }
+        protected virtual void OnEnter() { }
+        protected virtual void OnExit() { }
+        protected virtual void OnShutdown() { }
+
+        internal virtual void Initialize(in StateMachine.InitContext context)
+        {
+            StateMachine = context.stateMachine;
+
+            var subStates = context.subStates;
+            DeclareChildren(out _entrySubState, subStates);
+
+            foreach (var s in subStates)
             {
-                if (ReferenceEquals(states[i], state))
-                    return true;
+                if (s is null)
+                    throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
             }
 
-            return false;
-        }
+            // Auto-add entry sub-state if the user didn't list it explicitly.
+            if (_entrySubState != null && !subStates.Contains(_entrySubState))
+                subStates.Add(_entrySubState);
 
-        internal abstract IParentState parentState { get; set; }
-
-        public string name => GetType().Name;
-
-        protected void TransitTo(IState destination)
-        {
-            stateMachine.TransitTo(destination);
-        }
-
-        protected void TransitTo<TArg>(IState<TArg> destination, TArg arg)
-        {
-            stateMachine.TransitTo(destination, arg);
-        }
-
-        internal virtual void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
-        {
-            var iterState = this;
-            var propagateUntil = _hasTopState.rootState;
-            var sm = stateMachine;
-
-            while (true)
+            if (subStates.Count > 0)
             {
-                if (iterState is TReceiver receiver)
+                _childStates = new State[subStates.Count];
+                for (int i = 0; i < subStates.Count; i++)
+                {
+                    var child = subStates[i].State;
+                    if (child.ParentState != null)
+                        throw new StateMachine.InitializationException(
+                            $"Cannot add state {child.GetType()} as a child of {GetType()}; it already has a parent.");
+                    child.ParentState = this;
+                    _childStates[i] = child;
+                }
+                subStates.Clear();
+
+                foreach (var child in _childStates)
+                    child.Initialize(context);
+            }
+
+            OnInitialize();
+        }
+
+        internal virtual void Shutdown()
+        {
+            if (_childStates != null)
+            {
+                foreach (var child in _childStates)
+                    child.Shutdown();
+            }
+            OnShutdown();
+            _childStates = null;
+            _activeSubState = null;
+            _entrySubState = null;
+            StateMachine = null!;
+            ParentState = null;
+        }
+
+        internal void EnterBegin()
+        {
+            StateMachine.SetTopState(this);
+            _activeSubState = _entrySubState?.State;
+
+            if (StateMachine.Logging.HasFlag(StateMachine.LogFlags.EnterExit))
+                StateMachine.WriteLine($"{StateMachine.Name} entering {Name}");
+        }
+
+        internal void EnterEnd()
+        {
+            OnEnter();
+            _entrySubState?.StateEnter();
+        }
+
+        internal void Exit()
+        {
+            _activeSubState?.Exit();
+            OnExit();
+
+            if (StateMachine.Logging.HasFlag(StateMachine.LogFlags.EnterExit))
+                StateMachine.WriteLine($"{StateMachine.Name} exiting {Name}");
+
+            if (ParentState != null)
+                StateMachine.SetTopState(ParentState);
+            else
+                StateMachine.SetTopState(this);   // root exiting: stays as top (machine is going Offline)
+        }
+
+        // === Transition resolution ===
+        // Implements StateMachine.ITransition. Walks via the message bubble; the first state on the
+        // active chain whose child is the transition target claims it.
+
+        void StateMachine.ITransition.TransitTo(IState target)
+        {
+            var targetState = target.State;
+            if (targetState.ParentState == this)
+            {
+                _activeSubState?.Exit();
+                _activeSubState = targetState;
+                target.StateEnter();
+                return;
+            }
+            PropagateMessage();
+        }
+
+        void StateMachine.ITransition.TransitTo<TArg>(IState<TArg> target, TArg arg)
+        {
+            var targetState = target.State;
+            if (targetState.ParentState == this)
+            {
+                _activeSubState?.Exit();
+                _activeSubState = targetState;
+                target.StateEnter(arg);
+                return;
+            }
+            PropagateMessage();
+        }
+
+        // === Message dispatch (non-virtual; single implementation works for all states) ===
+
+        internal void ReceiveMessage<TReceiver>(Handler<TReceiver> handler) where TReceiver : class
+        {
+            var iter = this;
+            var sm = StateMachine;
+            while (iter != null)
+            {
+                if (iter is TReceiver receiver)
                 {
                     sm._messageConsumed = true;
 #if UNITY_PROFILING
-                    Profiler.BeginSample(GetType().FullName);
+                    Profiler.BeginSample(iter.GetType().FullName);
 #endif
                     handler(receiver);
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
-                    if (sm._messageConsumed)
-                        return;
+                    if (sm._messageConsumed) return;
                 }
-
-                if (iterState == propagateUntil) break;
-                iterState = iterState.parentState.state;
+                iter = iter.ParentState;
             }
         }
 
-        internal virtual void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
+        internal void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg) where TReceiver : class
         {
-            var iterState = this;
-            var propagateUntil = _hasTopState.rootState;
-            var sm = stateMachine;
-
-            while (true)
+            var iter = this;
+            var sm = StateMachine;
+            while (iter != null)
             {
-                if (iterState is TReceiver receiver)
+                if (iter is TReceiver receiver)
                 {
                     sm._messageConsumed = true;
 #if UNITY_PROFILING
-                    Profiler.BeginSample(GetType().FullName);
+                    Profiler.BeginSample(iter.GetType().FullName);
 #endif
                     handler(receiver, arg);
 #if UNITY_PROFILING
                     Profiler.EndSample();
 #endif
-                    if (sm._messageConsumed)
-                        return;
+                    if (sm._messageConsumed) return;
                 }
-
-                if (iterState == propagateUntil) break;
-                iterState = iterState.parentState.state;
+                iter = iter.ParentState;
             }
         }
 
-        internal virtual void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
+        internal void ReceiveMessage<TReceiver, TResult>(Func<TReceiver, TResult> handler, out TResult result) where TReceiver : class
         {
-            _hasTopState = hasTopState;
-            stateMachine = context.stateMachine;
-            //OnInitialize();
-        }
-
-        internal virtual void Shutdown()
-        {
-            OnShutdown();
-            _hasTopState = null!;
-            stateMachine = null!;
-            parentState = null!;
-        }
-
-        protected virtual void OnShutdown() { }
-
-        internal virtual void EnterBegin()
-        {
-            _hasTopState.topState = this;
-
-            //Debug.Assert(stateMachine.receivingMessage);
-            if (stateMachine.logFlags.HasFlag(StateMachine.LogFlags.EnterExit))
+            var iter = this;
+            var sm = StateMachine;
+            while (iter != null)
             {
-                stateMachine.WriteLine($"{stateMachine.Name} entering {name}");
+                if (iter is TReceiver receiver)
+                {
+                    sm._messageConsumed = true;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(iter.GetType().FullName);
+#endif
+                    var value = handler(receiver);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
+                    if (sm._messageConsumed)
+                    {
+                        result = value;
+                        return;
+                    }
+                }
+                iter = iter.ParentState;
             }
-
+            result = default!;
         }
 
-        internal virtual void EnterEnd()
+        internal void ReceiveMessage<TReceiver, TArg, TResult>(Func<TReceiver, TArg, TResult> handler, TArg arg, out TResult result) where TReceiver : class
         {
-            OnEnter();
-        }
-
-        internal virtual void Exit()
-        {
-            //Debug.Assert(stateMachine.receivingMessage);
-            if (stateMachine.logFlags.HasFlag(StateMachine.LogFlags.EnterExit))
+            var iter = this;
+            var sm = StateMachine;
+            while (iter != null)
             {
-                stateMachine.WriteLine($"{stateMachine.Name} exiting {name}");
+                if (iter is TReceiver receiver)
+                {
+                    sm._messageConsumed = true;
+#if UNITY_PROFILING
+                    Profiler.BeginSample(iter.GetType().FullName);
+#endif
+                    var value = handler(receiver, arg);
+#if UNITY_PROFILING
+                    Profiler.EndSample();
+#endif
+                    if (sm._messageConsumed)
+                    {
+                        result = value;
+                        return;
+                    }
+                }
+                iter = iter.ParentState;
             }
-
-            if (_hasTopState.rootState == this)
-                _hasTopState.topState = _hasTopState.rootState.state;
-            else
-                _hasTopState.topState = parentState.state;
+            result = default!;
         }
 
-        protected virtual void OnEnter() { }
-        protected virtual void OnExit() { }
-
-        public StateMachine stateMachine { get; private set; } = null!;
-        private IHasTopState _hasTopState = null!;
-
-        public static implicit operator bool(State? state)
-        {
-            return state != null;
-        }
-
-        public void PropagateMessage()
-        {
-            stateMachine._messageConsumed = false;
-        }
-
-        // Walk-protocol overrides. Override in HierarchicalState and OrthogonalState; SimpleState
-        // inherits the no-children defaults below. Used by StateMachine.Walk().
-        internal virtual int WalkChildCount(WalkMode mode) => 0;
-        internal virtual State WalkChild(int index, WalkMode mode)
-            => throw new InvalidOperationException($"State {GetType().Name} has no walk children");
-        internal virtual bool WalkIsChildActive(State child) => false;
+        public static implicit operator bool(State? state) => state != null;
     }
 
-    public abstract class State<TActor, TParent> : State where TParent : IParentState where TActor : class
+    /// <summary>
+    /// Generic state with a typed actor. Use this as the base for the root state of a machine,
+    /// or for any state whose users don't need a typed parent reference.
+    /// </summary>
+    public abstract class State<TActor> : State<TActor, State> where TActor : class { }
+
+    /// <summary>
+    /// Generic state with a typed actor and typed parent. Use this when child states want to
+    /// reach back to sibling references via <c>Parent.SomeSibling</c>.
+    /// </summary>
+    public abstract class State<TActor, TParent> : State where TActor : class where TParent : State
     {
         private TActor _actor = null!;
-        public TActor actor
+
+        public TActor Actor
         {
             get
             {
                 AssertInitialized();
                 return _actor;
             }
-            private set => _actor = value;
         }
+
+        public TParent Parent => (TParent)ParentState!;
 
         [System.Diagnostics.Conditional("DEBUG")]
         private void AssertInitialized()
         {
-            if (((object?)stateMachine) is null)
+            if (((object?)StateMachine) is null)
                 throw new InvalidOperationException(
-                    $"Cannot access actor on state {GetType().Name}: state machine is not initialized " +
+                    $"Cannot access Actor on state {GetType().Name}: state machine is not initialized " +
                     "(either Initialize has not been called, or Shutdown has run). " +
-                    "States must not access actor from their constructors — use OnInitialize instead.");
-        }
-
-        internal State()
-        {
-        }
-
-        internal override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
-        {
-            actor = (context.stateMachine.actor as TActor)!;
-            base.Initialize(context, hasTopState);
-        }
-
-
-        private TParent _parent = default!;
-        public TParent parent => _parent;
-
-        internal override IParentState parentState
-        {
-            get => _parent;
-            set => _parent = (TParent)value;
-        }
-    }
-
-    public class SimpleState<TActor> : SimpleState<TActor, IParentState> where TActor : class { }
-
-    public class SimpleState<TActor, TParent> : State<TActor, TParent> where TParent : IParentState where TActor : class
-    {
-
-        internal override sealed void EnterBegin()
-        {
-            base.EnterBegin();
-        }
-
-        internal override sealed void EnterEnd()
-        {
-            base.EnterEnd();
-        }
-
-        internal override sealed void Exit()
-        {
-            OnExit();
-            base.Exit();
-        }
-
-        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
-        {
-            base.Initialize(context, hasTopState);
-            OnInitialize();
+                    "States must not access Actor from their constructors — use OnInitialize instead.");
         }
         
-        protected virtual void OnInitialize() { }
-
-        internal override sealed void Shutdown()
+        internal override void Initialize(in StateMachine.InitContext context)
         {
-            base.Shutdown();
+            _actor = (context.stateMachine.Actor as TActor)!;
+            base.Initialize(context);
         }
     }
-
-    public abstract class HierarchicalState<TActor> : HierarchicalState<TActor, IParentState> where TActor : class
-    {
-    }
-
-    public abstract class HierarchicalState<TActor, TParent> : State<TActor, TParent>, IParentState, StateMachine.ITransition where TParent : IParentState where TActor : class
-    {
-        private State? _activeSubState;
-        private IState? _entrySubState;
-
-        private State[]? _childStates = null;
-
-        public int ChildCount => _childStates!.Length;
-        public State GetChild(int index) => _childStates![index];
-
-        void StateMachine.ITransition.TransitTo(IState state)
-        {
-            if (Contains(_childStates!, state.state))
-            {
-                _activeSubState?.Exit();
-                _activeSubState = state.state;
-                state.StateEnter();
-                return;
-            }
-            PropagateMessage();
-        }
-
-        void StateMachine.ITransition.TransitTo<TArg>(IState<TArg> state, TArg arg)
-        {
-            if (Contains(_childStates!, state.state))
-            {
-                _activeSubState?.Exit();
-                _activeSubState = state.state;
-                state.StateEnter(arg);
-                return;
-            }
-            PropagateMessage();
-        }
-
-
-        internal override sealed void EnterBegin()
-        {
-            base.EnterBegin();
-            _activeSubState = _entrySubState?.state;
-        }
-
-        internal override sealed void EnterEnd()
-        {
-            base.EnterEnd();
-            _entrySubState?.StateEnter();
-        }
-
-        internal override sealed void Exit()
-        {
-            _activeSubState?.Exit();
-            OnExit();
-            base.Exit();
-        }
-
-        internal override sealed void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
-        {
-            base.Initialize(context, hasTopState);
-            var childStates = context.iBaseStates;
-            OnInitialize(out _entrySubState, childStates);
-
-            foreach (var s in childStates)
-            {
-                if (s is null)
-                    throw new StateMachine.InitializationException($"ChildStates of {GetType()} cannot be null");
-            }
-
-            bool addEntrySubState = _entrySubState != null && !childStates.Contains(_entrySubState);
-            if (addEntrySubState)
-            {
-                childStates.Add(_entrySubState!);
-            }
-
-            _childStates = new State[childStates.Count];
-
-            for (int i = 0; i < childStates.Count; ++i)
-            {
-                var child = childStates[i].state;
-
-                if (child.parentState != null)
-                {
-                    throw new StateMachine.InitializationException($"Cannot add state {child.GetType()} as a child of {GetType()}. already has a parent");
-                }
-
-                child.parentState = this;
-                _childStates[i] = child;
-            }
-
-            childStates.Clear();
-
-            foreach (var child in _childStates)
-            {
-                child.Initialize(context, hasTopState);
-            }
-        }
-
-        /// <summary>
-        /// Declare this hierarchical state's child states.
-        /// </summary>
-        /// <param name="entrySubState">The child to enter by default. Set to <c>null</c> to
-        /// defer the entry decision to runtime, then call <c>TransitTo(...)</c> from inside
-        /// <see cref="IState.Enter"/> to pick a child based on context.</param>
-        /// <param name="subStates">Add every child state to this list.</param>
-        protected abstract void OnInitialize(out IState? entrySubState, List<IStateBase> subStates);
-
-        internal override sealed void Shutdown()
-        {
-            foreach (var child in _childStates!)
-            {
-                child.Shutdown();
-            }
-
-            _childStates = null!;
-            base.Shutdown();
-        }
-
-        internal override sealed int WalkChildCount(WalkMode mode)
-        {
-            if (_childStates is null)
-                return 0;
-            if (mode == WalkMode.ActiveOnly)
-                return _activeSubState != null ? 1 : 0;
-            return _childStates.Length;
-        }
-
-        internal override sealed State WalkChild(int index, WalkMode mode)
-        {
-            if (mode == WalkMode.ActiveOnly)
-                return _activeSubState!;
-            return _childStates![index];
-        }
-
-        internal override sealed bool WalkIsChildActive(State child) => ReferenceEquals(_activeSubState, child);
-    }
-
-
-    public abstract class OrthogonalState<TActor> : OrthogonalState<TActor, IParentState> where TActor : class
-    {
-    }
-
-    public abstract class OrthogonalState<TActor, TParent> : State<TActor, TParent>, IParentState where TParent : IParentState where TActor : class
-    {
-        private class OrthogonalBranch : IHasTopState
-        {
-            public State? topState { get; set; }
-            public IState rootState { get; set; } = null!;
-        }
-
-        private OrthogonalBranch[]? _branches = null;
-
-        public int ChildCount => _branches!.Length;
-
-        internal override sealed void EnterBegin()
-        {
-            base.EnterBegin();
-        }
-
-        internal override sealed void EnterEnd()
-        {
-            base.EnterEnd();
-            foreach (var subState in _branches!)
-                subState.rootState.StateEnter();
-        }
-
-        internal override sealed void Exit()
-        {
-            foreach (var subState in _branches!)
-                subState.rootState.state.Exit();
-            OnExit();
-            base.Exit();
-        }
-
-        internal override void Initialize(in StateMachine.InitContext context, IHasTopState hasTopState)
-        {
-            base.Initialize(context, hasTopState);
-            var childStates = context.iStates;
-            OnInitialize(childStates);
-
-            foreach (var s in childStates)
-            {
-                if (s is null)
-                    throw new StateMachine.InitializationException("ChildStates of OrthogonalState cannot be null");
-            }
-
-            _branches = new OrthogonalBranch[childStates.Count];
-
-            for (int i = 0; i < childStates.Count; ++i)
-            {
-                var child = childStates[i];
-                var childState = child.state;
-
-                if (childState.parentState != null)
-                {
-                    throw new StateMachine.InitializationException("State already has a parent");
-                }
-
-                childState.parentState = this;
-                var branch = new OrthogonalBranch { rootState = child };
-                _branches[i] = branch;
-            }
-
-            childStates.Clear();
-
-            foreach(var branch in _branches)
-            {
-                branch.rootState.state.Initialize(context, branch);
-            }
-        }
-
-        /// <summary>
-        /// Declare this orthogonal state's parallel child branches. All listed children run
-        /// at the same time, each with its own active-state pointer.
-        /// </summary>
-        protected abstract void OnInitialize(List<IState> subStates);
-
-        internal override sealed void Shutdown()
-        {
-            if (_branches != null)
-            {
-                for (int i = 0; i < _branches.Length; ++i)
-                {
-                    _branches[i].topState?.Shutdown();
-                }
-            }
-
-            _branches = null!;
-            base.Shutdown();
-        }
-
-        internal override sealed int WalkChildCount(WalkMode mode) => _branches?.Length ?? 0;
-
-        internal override sealed State WalkChild(int index, WalkMode mode)
-            => _branches![index].rootState.state;
-
-        // Every branch of an active orthogonal state is itself active; the active descent within
-        // each branch is handled recursively by that branch's own WalkChildCount/WalkChild.
-        internal override sealed bool WalkIsChildActive(State child) => true;
-
-        internal override sealed void ReceiveMessage<TReceiver>(Handler<TReceiver> handler)
-        {
-            var anyBranchConsumed = false;
-            foreach (var branch in _branches!)
-            {
-                stateMachine._messageConsumed = false;
-                branch.topState!.ReceiveMessage(handler);
-                anyBranchConsumed |= stateMachine._messageConsumed;
-            }
-
-            if (!anyBranchConsumed)
-                base.ReceiveMessage(handler);
-        }
-
-        internal override sealed void ReceiveMessage<TReceiver, TArg>(Handler<TReceiver, TArg> handler, TArg arg)
-        {
-            var anyBranchConsumed = false;
-            foreach (var branch in _branches!)
-            {
-                stateMachine._messageConsumed = false;
-                branch.topState!.ReceiveMessage(handler, arg);
-                anyBranchConsumed |= stateMachine._messageConsumed;
-            }
-
-            if (!anyBranchConsumed)
-                base.ReceiveMessage(handler, arg);
-        }
-    }
-
-
 }

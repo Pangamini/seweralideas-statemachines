@@ -22,7 +22,7 @@ namespace SeweralIdeas.StateMachines
             {
                 _onMessagesAvailable = onMessagesAvailable;
                 _machine = new StateMachine(name, rootState, debugLog);
-                _machine.logFlags = logFlags;
+                _machine.Logging = logFlags;
             }
             finally
             {

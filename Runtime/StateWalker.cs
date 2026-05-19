@@ -11,8 +11,8 @@ namespace SeweralIdeas.StateMachines
     {
         /// <summary>Visit every state in the tree, regardless of activity.</summary>
         AllStates,
-        /// <summary>Visit only states currently on the active chain (the root and, recursively,
-        /// each hierarchical state's active sub-state, plus every branch of every orthogonal state).</summary>
+        /// <summary>Visit only states currently on the active chain — the root, then recursively
+        /// each composite state's currently-active sub-state, until reaching the active leaf.</summary>
         ActiveOnly,
     }
 
@@ -125,7 +125,7 @@ namespace SeweralIdeas.StateMachines
                     _stack = new Frame[16];
                     _stack[0] = new Frame
                     {
-                        state = _machine.Root.state,
+                        state = _machine.RootState,
                         depth = 0,
                         childIndex = -1,
                         isActive = true,
@@ -139,25 +139,55 @@ namespace SeweralIdeas.StateMachines
 
                     if (top.childIndex == -1)
                     {
-                        int childCount = top.state.WalkChildCount(_mode);
-                        _current = new StateNode(top.state, top.depth, top.isActive, childCount > 0);
+                        _current = new StateNode(top.state, top.depth, top.isActive, HasChildrenIn(top.state));
                         top.childIndex = 0;
                         return true;
                     }
 
-                    int total = top.state.WalkChildCount(_mode);
-                    if (top.childIndex < total)
+                    if (TryGetChild(top.state, top.childIndex, out State? child, out bool childActive))
                     {
-                        State child = top.state.WalkChild(top.childIndex, _mode);
-                        bool childActive = top.isActive && top.state.WalkIsChildActive(child);
+                        bool active = top.isActive && childActive;
                         top.childIndex++;
-                        Push(child, top.depth + 1, childActive);
+                        Push(child, top.depth + 1, active);
                         continue;
                     }
 
                     _stackTop--;
                 }
 
+                return false;
+            }
+
+            private bool HasChildrenIn(State state)
+            {
+                return _mode == WalkMode.AllStates
+                    ? state.ChildCount > 0
+                    : state.ActiveSubState != null;
+            }
+
+            private bool TryGetChild(State state, int index, out State child, out bool isActive)
+            {
+                if (_mode == WalkMode.AllStates)
+                {
+                    if (index < state.ChildCount)
+                    {
+                        child = state.GetChild(index);
+                        isActive = ReferenceEquals(state.ActiveSubState, child);
+                        return true;
+                    }
+                }
+                else
+                {
+                    // ActiveOnly: at most one child (the active sub-state)
+                    if (index == 0 && state.ActiveSubState != null)
+                    {
+                        child = state.ActiveSubState;
+                        isActive = true;
+                        return true;
+                    }
+                }
+                child = null!;
+                isActive = false;
                 return false;
             }
 

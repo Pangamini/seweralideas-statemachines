@@ -20,13 +20,13 @@ namespace SeweralIdeas.StateMachines.Recipes
         public static readonly Handler<ITick, float> msg_tick = (receiver, dt) =>
         {
             receiver.Tick(dt);
-            receiver.state.PropagateMessage();
+            receiver.State.PropagateMessage();
         };
 
         public static readonly Handler<IUpdate, float> msg_update = (receiver, dt) =>
         {
             receiver.Update(dt);
-            receiver.state.PropagateMessage();
+            receiver.State.PropagateMessage();
         };
     }
 }

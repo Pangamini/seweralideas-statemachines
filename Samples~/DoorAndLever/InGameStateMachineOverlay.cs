@@ -47,7 +47,7 @@ public sealed class InGameStateMachineOverlay : IStateVisitor
     {
         var prev = GUI.color;
         GUI.color = isActive ? activeColor : inactiveColor;
-        GUILayout.BeginVertical(state.name, GUI.skin.window, s_expandHeight);
+        GUILayout.BeginVertical(state.Name, GUI.skin.window, s_expandHeight);
         GUI.color = prev;
 
         if (hasChildren)

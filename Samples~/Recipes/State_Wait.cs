@@ -32,9 +32,9 @@ namespace SeweralIdeas.StateMachines.Recipes
     /// interfaces on top — the wait behavior keeps working underneath.
     /// </summary>
     public abstract class State_Wait<TActor, TParent>
-        : SimpleState<TActor, TParent>, IState<float>, ITick, IExtendWait, ICancelWait
+        : State<TActor, TParent>, IState<float>, ITick, IExtendWait, ICancelWait
         where TActor  : class
-        where TParent : IParentState
+        where TParent : State
     {
         protected float _timeLeft;
 
