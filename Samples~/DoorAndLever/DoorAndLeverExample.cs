@@ -16,8 +16,8 @@ public class DoorAndLeverExample : MonoBehaviour
     // Two parallel state machines composed at the actor level — what used to be an
     // OrthogonalState root is now explicit composition. Each machine has its own lifetime,
     // its own dispatch queue, and the actor routes incoming events to the relevant machine.
-    private readonly StateMachine _leverMachine = new("Lever", new State_LeverRoot(), Debug.Log);
-    private readonly StateMachine _doorMachine  = new("Door",  new State_DoorRoot(),  Debug.Log);
+    private readonly StateMachine _leverMachine;
+    private readonly StateMachine _doorMachine;
 
     private readonly InGameStateMachineOverlay _overlay = new();
 
@@ -44,6 +44,12 @@ public class DoorAndLeverExample : MonoBehaviour
         }
     }
 
+    protected DoorAndLeverExample()
+    {
+        _leverMachine = new("Lever", this, new State_LeverRoot(), Debug.Log);
+        _doorMachine = new("Door", this,  new State_DoorRoot(),  Debug.Log);
+    }
+
     void Awake()
     {
         _leverMachine.Logging = StateMachine.LogFlags.EnterExit;
@@ -57,8 +63,8 @@ public class DoorAndLeverExample : MonoBehaviour
         try
         {
             Profiler.BeginSample("DoorAndLeverExample.OnEnable", this);
-            _leverMachine.Initialize(this);
-            _doorMachine.Initialize(this);
+            _leverMachine.Initialize();
+            _doorMachine.Initialize();
         }
         catch (Exception)
         {
