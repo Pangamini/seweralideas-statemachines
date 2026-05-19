@@ -38,7 +38,7 @@ public class Game
     class State_Root : State<Game>, IState
     {
         readonly State_Idle _idle = new();
-        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+        protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = _idle;
             subStates.Add(_idle);
@@ -82,7 +82,7 @@ There is no NuGet package. The runtime is a small set of files under `Runtime/`.
 | **`StateMachine`** | The container. Built once with `(name, actor, rootState)` — the constructor walks the tree and binds the topology + actor in one pass. Repeated `Initialize` / `Shutdown` cycles are cheap (no rebuild). |
 | **`Actor`** | The object you pass to the `StateMachine` constructor. States typed `State<TActor>` / `State<TActor, TParent>` expose it as a strongly-typed `Actor` property. It is the bridge between the machine and the world it controls. |
 | **Root state** | The state at the top of the hierarchy. There is exactly one. |
-| **`State<TActor>` / `State<TActor, TParent>`** | The single state base class. A leaf is a state that doesn't declare children; a composite declares children via `DeclareChildren` and has exactly one active at a time. The `TParent` overload exposes a strongly-typed `Parent` property for `Parent.SomeSibling` access. |
+| **`State<TActor>` / `State<TActor, TParent>`** | The single state base class. A leaf is a state that doesn't declare children; a composite declares children via `OnBuild` and has exactly one active at a time. The `TParent` overload exposes a strongly-typed `Parent` property for `Parent.SomeSibling` access. |
 | **Receiver interface** | An interface *you* define, e.g. `interface ITick { void Tick(float dt); }`. Any state can implement zero or more of these. |
 | **`Handler<TReceiver>` / `Handler<TReceiver, TArg>`** | A delegate that dispatches one specific receiver interface (no return value). Conventionally a `static readonly` field per message. |
 | **`FuncHandler<TReceiver, TResult>` / `FuncHandler<TReceiver, TArg, TResult>`** | The return-value counterpart, paired with `SendMessageNow` / `TrySendMessageNow` for synchronous queries. |
@@ -124,7 +124,7 @@ public class TrafficLight
         public readonly State_Green  Green  = new();
         public readonly State_Yellow Yellow = new();
 
-        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+        protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = Red;
             subStates.Add(Red);
@@ -176,7 +176,7 @@ class State_Root : State<TrafficLight>, IState, IPowerSwitch
     public readonly State_Off       Off       = new();
     public readonly State_Operating Operating = new();
 
-    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+    protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Off;
         subStates.Add(Off);
@@ -197,7 +197,7 @@ class State_Operating : State<TrafficLight, State_Root>, IState
     public readonly State_Green  Green  = new();
     public readonly State_Yellow Yellow = new();
 
-    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+    protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Red;
         subStates.Add(Red);
@@ -298,7 +298,7 @@ class State_Operating : State<TrafficLight, State_Root>, IState, IEmergency
     public readonly State_Green  Green  = new();
     public readonly State_Yellow Yellow = new();
 
-    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+    protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = Red;
         subStates.Add(Red);
@@ -494,7 +494,7 @@ class State_Root : State<GameRoot>, IState
     readonly State_MainMenu _mainMenu = new();
     readonly State_Ingame   _ingame   = new();
 
-    protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+    protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
     {
         entrySubState = null;   // decided in Enter()
         subStates.Add(_mainMenu);
@@ -549,7 +549,7 @@ machine.Initialize();   // cheap — topology and actor survive Shutdown
 
 | Member | Behavior |
 |---|---|
-| `new StateMachine(string name, object actor, IState rootState, Action<string> debugLog = null)` | Constructs the machine and immediately builds the state tree: calls `DeclareChildren` on every state, wires parent/child links, binds each `State<TActor>._actor`. `debugLog` receives diagnostic strings (defaults to `Console.WriteLine`). |
+| `new StateMachine(string name, object actor, IState rootState, Action<string> debugLog = null)` | Constructs the machine and immediately builds the state tree: calls `OnBuild` on every state, wires parent/child links, binds each `State<TActor>._actor`. `debugLog` receives diagnostic strings (defaults to `Console.WriteLine`). |
 | `Initialize()` | Runs `OnInitialize` bottom-up across the tree, then enters the root. Must be called when `InitializationState == Offline`. May be called again after each `Shutdown` — topology and actor persist, so re-init is cheap. If `OnInitialize` throws, the machine attempts to shut down the partial tree (calling `OnShutdown` on every state) and rethrows; user `OnShutdown` should tolerate that. |
 | `Shutdown()` | Exits the active states from the leaf upward, then runs `OnShutdown` bottom-up. Topology and actor are **not** cleared — call `Initialize` again to restart. Requires `IsInitialized`. |
 | `IsInitialized` | True while `InitializationState` is `Initialized` or `ShuttingDown`. |
@@ -568,7 +568,7 @@ machine.Initialize();   // cheap — topology and actor survive Shutdown
 | `State<TActor>` | Any state, leaf or composite. The actor is `class`-constrained. |
 | `State<TActor, TParent>` | Same, plus a strongly-typed `Parent` property — useful for `Parent.SomeSibling` access from child states. `TParent` must derive from `State`. |
 
-There is **one** state class for both leaves and composites. A leaf is simply a state that doesn't override `DeclareChildren`; a composite overrides it to declare its children and (optionally) an entry sub-state. For parallel concurrent state, compose multiple `StateMachine` instances at the actor level — see the Door and Lever sample.
+There is **one** state class for both leaves and composites. A leaf is simply a state that doesn't override `OnBuild`; a composite overrides it to declare its children and (optionally) an entry sub-state. For parallel concurrent state, compose multiple `StateMachine` instances at the actor level — see the Door and Lever sample.
 
 ### State interfaces
 
@@ -584,7 +584,7 @@ A state typically implements `IState` (or `IState<T>`) **and** any number of cus
 
 | Hook | When |
 |---|---|
-| `DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)` (virtual) | Called once during `StateMachine` construction. Override on composite states to add children and (optionally) set the default entry sub-state. Leaves don't override anything. Set `entrySubState = null` to decide entry at runtime (e.g. from inside `IState.Enter`). |
+| `OnBuild(out IState? entrySubState, List<IStateBase> subStates)` (virtual) | Called once during `StateMachine` construction. Override to declare children and (optionally) set the default entry sub-state; also a good place for one-time setup that needs `Actor` (e.g. constructing a child `StateMachine`). Leaves with no children don't override anything. Set `entrySubState = null` to decide entry at runtime (e.g. from inside `IState.Enter`). |
 | `OnInitialize()` (virtual) | Called bottom-up on every `Initialize()` call, after the entire sub-tree's `OnInitialize` has run. Paired with `OnShutdown`. Use for setup that should be active only while the machine is running. |
 | `OnShutdown()` (virtual) | Called bottom-up on every `Shutdown()` call, after the root has been exited. Reverse of `OnInitialize`. |
 | `IState.Enter()` / `IState<TArg>.Enter(TArg)` | Called every time the state becomes active. Receives the transition argument, if any. |
@@ -665,7 +665,7 @@ machine.Logging = StateMachine.LogFlags.EnterExit;
 
 ### Exceptions
 
-`StateMachine.InitializationException` is thrown when the state graph declared in `DeclareChildren` is invalid — typically because a child state is `null` or already has a parent (i.e. the same instance was added twice). The exception is thrown from inside the `StateMachine` constructor's build pass.
+`StateMachine.InitializationException` is thrown when the state graph declared in `OnBuild` is invalid — typically because a child state is `null` or already has a parent (i.e. the same instance was added twice). The exception is thrown from inside the `StateMachine` constructor's build pass.
 
 ## ConcurrentStateMachine
 

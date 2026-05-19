@@ -112,7 +112,7 @@ public class DoorAndLeverExample : MonoBehaviour
             Actor._leverIconOff.SetActive(false);
         }
 
-        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+        protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = _switchedOn;
             subStates.Add(_switchedOn);
@@ -152,7 +152,7 @@ public class DoorAndLeverExample : MonoBehaviour
             _state_closing = new State_Closing(_state_closed);
         }
 
-        protected override void DeclareChildren(out IState? entrySubState, List<IStateBase> subStates)
+        protected override void OnBuild(out IState? entrySubState, List<IStateBase> subStates)
         {
             entrySubState = _state_closed;
             subStates.Add(_state_open);
