@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -21,7 +20,7 @@ namespace SeweralIdeas.StateMachines.Editor
         [SerializeField] private Color _inactiveColor = new(0.6f, 0.6f, 0.6f, 1f);
         [SerializeField] private bool _showSettings;
 
-        [NonSerialized] private readonly List<MachineEntry> _machines = new();
+        [NonSerialized] private readonly List<StateMachineMemberScan.MachineEntry> _machines = new();
         [NonSerialized] private GUIContent[] _machineOptions = Array.Empty<GUIContent>();
         [NonSerialized] private int _selectedMachineIndex;
         [NonSerialized] private GameObject? _scannedGameObject;
@@ -70,7 +69,7 @@ namespace SeweralIdeas.StateMachines.Editor
                 foreach (var component in _selectedGameObject.GetComponents<MonoBehaviour>())
                 {
                     if (component != null)
-                        FindStateMachines(component, _machines);
+                        StateMachineMemberScan.FindStateMachines(component, _machines);
                 }
             }
 
@@ -82,37 +81,6 @@ namespace SeweralIdeas.StateMachines.Editor
                 _selectedMachineIndex = 0;
 
             Repaint();
-        }
-
-        private static void FindStateMachines(MonoBehaviour component, List<MachineEntry> output)
-        {
-            var type = component.GetType();
-            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
-            while (type != null && type != typeof(MonoBehaviour))
-            {
-                foreach (var member in type.GetMembers(flags))
-                {
-                    Type? memberType = null;
-                    Func<object, object?>? getter = null;
-
-                    if (member is FieldInfo field)
-                    {
-                        memberType = field.FieldType;
-                        getter = field.GetValue;
-                    }
-                    else if (member is PropertyInfo prop && prop.GetMethod != null && prop.GetIndexParameters().Length == 0)
-                    {
-                        memberType = prop.PropertyType;
-                        getter = prop.GetValue;
-                    }
-
-                    if (getter != null && memberType != null && typeof(StateMachine).IsAssignableFrom(memberType))
-                    {
-                        output.Add(new MachineEntry(component, member.Name, getter));
-                    }
-                }
-                type = type.BaseType;
-            }
         }
 
         private void OnGUI()
@@ -167,53 +135,6 @@ namespace SeweralIdeas.StateMachines.Editor
             _renderer.InactiveColor = _inactiveColor;
             machine.Visit(_renderer);
             Repaint();
-        }
-
-        private readonly struct MachineEntry
-        {
-            private readonly object _component;
-            private readonly Func<object, object?> _getter;
-            public string DisplayName { get; }
-
-            public MachineEntry(object component, string memberName, Func<object, object?> getter)
-            {
-                _component = component;
-                _getter = getter;
-                DisplayName = $"{component.GetType().Name}.{memberName}";
-            }
-
-            public StateMachine? GetMachine() => _getter(_component) as StateMachine;
-        }
-
-        /// <summary>
-        /// Visitor that renders each state as a vertical-box-titled-by-name, with children
-        /// laid out horizontally inside it — the layout the package originally produced via
-        /// per-state <c>DrawGUI</c> overrides.
-        /// </summary>
-        private sealed class NestedBoxRenderer : IStateVisitor
-        {
-            private static readonly GUILayoutOption[] ExpandHeight = { GUILayout.ExpandHeight(true) };
-
-            public Color ActiveColor;
-            public Color InactiveColor;
-
-            public void BeginState(State state, int depth, bool isActive, bool hasChildren)
-            {
-                var prev = GUI.color;
-                GUI.color = isActive ? ActiveColor : InactiveColor;
-                GUILayout.BeginVertical(state.Name, GUI.skin.window, ExpandHeight);
-                GUI.color = prev;
-
-                if (hasChildren)
-                    GUILayout.BeginHorizontal();
-            }
-
-            public void EndState(State state, int depth, bool isActive, bool hasChildren)
-            {
-                if (hasChildren)
-                    GUILayout.EndHorizontal();
-                GUILayout.EndVertical();
-            }
         }
     }
 }
