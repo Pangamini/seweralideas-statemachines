@@ -25,7 +25,7 @@ namespace SeweralIdeas.StateMachines
         /// <summary>
         /// Used to ensure that AOT version exists when using IL2CPP
         /// </summary>
-#if UNITY_EDITOR || UNITY_STANDALONE
+#if UNITY_5_3_OR_NEWER
         [UnityEngine.Scripting.Preserve]
 #endif
         public static void InitializeType()

@@ -1,4 +1,10 @@
 # Changelog
+## [Unreleased]
+
+### Fixed
+- `SeweralIdeas.StateMachines` (Runtime) asmdef no longer references `UnityEngine.UI` / `UnityEditor.UI`; nothing in the runtime used them. Upgrade note: none, unless you relied on this assembly transitively exposing uGUI — add the reference to your own asmdef.
+- `MessagePool<T>.InitializeType` now carries `[Preserve]` on all Unity platforms (previously only Editor and Standalone), so IL2CPP stripping on WebGL/mobile no longer risks removing it.
+
 ## [0.4.0]
 
 Major refactor. Three big shifts:
