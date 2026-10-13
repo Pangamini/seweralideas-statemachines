@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `StateMachine.Walk()` and `Visit()` no longer return nothing for a machine that is not initialized. The topology is built in the constructor, so they now cover the whole tree with every state reported inactive. Upgrade note: callers that relied on the empty result as an "is it running" check should test `IsInitialized` themselves.
+- The inspector preview, the `StateMachineWindow` and the DoorAndLever sample overlay draw the state tree before `Initialize()` and after `Shutdown()` instead of showing a "not initialized" message.
+
 ### Fixed
 - `SeweralIdeas.StateMachines` (Runtime) asmdef no longer references `UnityEngine.UI` / `UnityEditor.UI`; nothing in the runtime used them. Upgrade note: none, unless you relied on this assembly transitively exposing uGUI — add the reference to your own asmdef.
 - `MessagePool<T>.InitializeType` now carries `[Preserve]` on all Unity platforms (previously only Editor and Standalone), so IL2CPP stripping on WebGL/mobile no longer risks removing it.

@@ -120,15 +120,13 @@ namespace SeweralIdeas.StateMachines
                 if (!_started)
                 {
                     _started = true;
-                    if (!_machine.IsInitialized)
-                        return false;
                     _stack = new Frame[16];
                     _stack[0] = new Frame
                     {
                         state = _machine.RootState,
                         depth = 0,
                         childIndex = -1,
-                        isActive = true,
+                        isActive = _machine.IsInitialized,
                     };
                     _stackTop = 0;
                 }
