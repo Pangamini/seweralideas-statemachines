@@ -124,12 +124,6 @@ namespace SeweralIdeas.StateMachines.Editor
                 return;
             }
 
-            if (!machine.IsInitialized)
-            {
-                EditorGUILayout.HelpBox("StateMachine is not initialized.", MessageType.Info);
-                return;
-            }
-
             _renderer ??= new NestedBoxRenderer();
             _renderer.ActiveColor = _activeColor;
             _renderer.InactiveColor = _inactiveColor;

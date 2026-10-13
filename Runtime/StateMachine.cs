@@ -51,7 +51,8 @@ namespace SeweralIdeas.StateMachines
         /// Walk the state machine's tree. Returns an allocation-aware struct enumerable;
         /// use with <c>foreach</c>. Iteration yields each visited state in depth-first order
         /// with depth, active-flag, and has-children metadata on each <see cref="StateNode"/>.
-        /// If the machine is not initialized the walk is empty.
+        /// The topology exists from construction, so a machine that is not initialized is walked
+        /// too, with every state reported inactive.
         /// </summary>
         public StateWalker Walk(WalkMode mode = WalkMode.AllStates) => new(this, mode);
 
@@ -60,13 +61,13 @@ namespace SeweralIdeas.StateMachines
         /// each state's children and <see cref="IStateVisitor.EndState"/> after. Use this when
         /// you need explicit boundaries per state — for example, to recreate the nested-box
         /// IMGUI layout where each composite state's children sit inside its box.
-        /// No-op if the machine is not initialized.
+        /// The topology exists from construction, so a machine that is not initialized is visited
+        /// too, with every state reported inactive.
         /// </summary>
         public void Visit(IStateVisitor visitor, WalkMode mode = WalkMode.AllStates)
         {
             if (visitor == null) throw new ArgumentNullException(nameof(visitor));
-            if (!IsInitialized) return;
-            VisitState(_rootState.State, depth: 0, isActive: true, visitor, mode);
+            VisitState(_rootState.State, depth: 0, isActive: IsInitialized, visitor, mode);
         }
 
         private static void VisitState(State state, int depth, bool isActive, IStateVisitor visitor, WalkMode mode)

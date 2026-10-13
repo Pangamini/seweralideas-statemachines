@@ -67,12 +67,6 @@ namespace SeweralIdeas.StateMachines.Editor
                 return;
             }
 
-            if (!machine.IsInitialized)
-            {
-                EditorGUI.HelpBox(rect, "StateMachine is not initialized.", MessageType.Info);
-                return;
-            }
-
             Vector2 contentSize = StateMachineTreeLayout.Measure(machine, out var sizes);
             var viewRect = new Rect(0f, 0f, Mathf.Max(contentSize.x, rect.width), Mathf.Max(contentSize.y, rect.height));
             _scroll = GUI.BeginScrollView(rect, _scroll, viewRect);

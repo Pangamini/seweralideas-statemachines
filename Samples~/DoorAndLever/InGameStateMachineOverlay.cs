@@ -35,11 +35,6 @@ public sealed class InGameStateMachineOverlay : IStateVisitor
             GUILayout.Label("(no state machine)");
             return;
         }
-        if (!machine.IsInitialized)
-        {
-            GUILayout.Label($"{machine.Name}: not initialized");
-            return;
-        }
         machine.Visit(this);
     }
 
