@@ -1,6 +1,9 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+- `DeferredInbox<TPriority>` (and `DeferredInbox`, with `int` priorities): messages for a `StateMachine` that are received now and handled later. `Post(handler, [arg,] priority)` only records the message; the owner calls `Flush(machine)` at a chosen point of its update, which sends them to the machine with the greater priority first (equal priorities in posting order; the constructor takes an optional `IComparer<TPriority>`, for when the default comparison is not the ranking you want). It is for when several senders act on the same state and the result must not depend on which of them ran first: post from the senders, flush once before ticking the machine. Separate from `StateMachine`, which is unchanged; nothing is handled until `Flush`, a machine that is not running drops what it is flushed, and `Clear()` drops the posted messages (call it when the owner is destroyed or reset). Messages posted by handlers during a flush wait for the next one. Upgrade note: none, it is new.
+
 ### Changed
 - **Breaking:** `StateMachine.Walk()` and `Visit()` no longer return nothing for a machine that is not initialized. The topology is built in the constructor, so they now cover the whole tree with every state reported inactive. Upgrade note: callers that relied on the empty result as an "is it running" check should test `IsInitialized` themselves.
 - The inspector preview, the `StateMachineWindow` and the DoorAndLever sample overlay draw the state tree before `Initialize()` and after `Shutdown()` instead of showing a "not initialized" message.
